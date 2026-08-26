@@ -24,6 +24,19 @@ app, the lamp firmware, or macOS.
 - No network access, analytics, cloud service, or account requirement.
 - Recoverable uninstaller moves installed files to Trash.
 
+## Screenshots
+
+### Menu-bar health indicator
+
+<img src="docs/images/menu-bar-green-dot.png" width="80" alt="Green iScreenBar synchronization status dot in the macOS menu bar">
+
+The dot is green while synchronization is healthy and changes to red after a
+USB control failure.
+
+### Observed sleep/wake synchronization
+
+![Terminal showing Studio Display sleep and wake events with matching lamp power changes](docs/images/sync-log.png)
+
 ## Tested setup
 
 - Apple-silicon Mac running macOS 26
