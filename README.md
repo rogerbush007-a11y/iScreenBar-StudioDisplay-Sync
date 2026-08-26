@@ -1,0 +1,114 @@
+# iScreenBar Studio Display Sync
+
+An unofficial, local-only macOS compatibility utility that synchronizes a BenQ
+iScreenBar with Apple Studio Display sleep and wake events.
+
+一个非官方、本地运行的 macOS 兼容工具：Apple Studio Display 熄屏时自动关闭
+BenQ iScreenBar，显示器唤醒时自动开灯。
+
+## Why
+
+BenQ's iScreenBar is designed for supported iMac models. Its original macOS app
+does not synchronize the lamp when an Apple Studio Display sleeps independently.
+This utility fills that single compatibility gap without modifying the original
+app, the lamp firmware, or macOS.
+
+## Features
+
+- Studio Display sleeps -> iScreenBar turns off.
+- Studio Display wakes -> iScreenBar turns on.
+- Green menu-bar dot while synchronization is healthy.
+- Red menu-bar dot if a USB power command fails.
+- Hover text shows the current display/synchronization state.
+- Starts automatically after login using a per-user LaunchAgent.
+- No network access, analytics, cloud service, or account requirement.
+- Recoverable uninstaller moves installed files to Trash.
+
+## Tested setup
+
+- Apple-silicon Mac running macOS 26
+- Apple Studio Display
+- BenQ iScreenBar USB HID device
+  - Vendor ID: `0x04A5`
+  - Product ID: `0x2501`
+
+Other macOS versions and hardware combinations may work but have not been
+physically verified. The current display selector chooses the largest external
+display reported by Core Graphics.
+
+## Requirements
+
+- macOS with Xcode Command Line Tools (`xcode-select --install`)
+- BenQ iScreenBar connected to the Mac over USB
+- Apple Studio Display connected and visible to macOS
+- The original BenQ app may remain installed and running
+
+## Install
+
+```bash
+git clone https://github.com/rogerbush007-a11y/iScreenBar-StudioDisplay-Sync.git
+cd iScreenBar-StudioDisplay-Sync
+./scripts/install.sh
+```
+
+The installer:
+
+1. builds a native app locally;
+2. installs it to `~/Applications`;
+3. creates a per-user LaunchAgent;
+4. starts the synchronization service.
+
+No administrator password is required by the installer.
+
+## Verify
+
+Look for the small green dot in the macOS menu bar, then let Studio Display
+sleep naturally. The lamp should turn off and return when the display wakes.
+
+Runtime log:
+
+```bash
+tail -f ~/Library/Logs/iScreenBarStudioSync.log
+```
+
+Service state:
+
+```bash
+launchctl print gui/$(id -u)/local.qiu.iScreenBarStudioSync
+```
+
+## Uninstall
+
+```bash
+./scripts/uninstall.sh
+```
+
+The service is stopped and its app and LaunchAgent are moved to Trash. The log
+is preserved for troubleshooting and can be deleted manually.
+
+## Build only
+
+```bash
+./scripts/build.sh
+```
+
+The app is written to `build/iScreenBar Studio Display Sync.app` and ad-hoc
+signed locally.
+
+## Behavior and limitations
+
+- The utility intentionally synchronizes power state: wake always sends the
+  lamp-on command after the utility turned it off for display sleep.
+- It does not control brightness or color temperature.
+- If the green dot disappears, the LaunchAgent is not running.
+- A USB failure changes the dot to red and writes the error to the local log.
+- The implementation uses two device-specific 33-byte HID output reports.
+
+## Privacy and security
+
+The source contains no networking API. All display observation and USB control
+happen locally. See [SECURITY.md](SECURITY.md) and [NOTICE.md](NOTICE.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
