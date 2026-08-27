@@ -1,11 +1,12 @@
 import AppKit
 import CoreGraphics
+import Darwin
 import Foundation
 import IOKit.hid
 
 private let benqVendorID = 0x04A5
 private let iScreenBarProductID = 0x2501
-private let pollInterval: TimeInterval = 1.0
+private let pollInterval: TimeInterval = 0.25
 
 private func log(_ message: String) {
     let formatter = ISO8601DateFormatter()
@@ -16,43 +17,44 @@ private func log(_ message: String) {
 private final class StatusIndicator: NSObject {
     private let item: NSStatusItem
     private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let syncMenuItem = NSMenuItem(title: "自动同步开关灯", action: #selector(toggleSync), keyEquivalent: "")
-    private(set) var isSyncEnabled: Bool
+    private let brightnessMenuItem = NSMenuItem(title: "跟随 Studio Display 亮度", action: #selector(toggleBrightnessFollow), keyEquivalent: "")
+    private(set) var isBrightnessFollowEnabled: Bool
 
     init(isAsleep: Bool) {
-        isSyncEnabled = UserDefaults.standard.object(forKey: "syncEnabled") as? Bool ?? true
+        isBrightnessFollowEnabled = UserDefaults.standard.bool(forKey: "brightnessFollowEnabled")
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.finishLaunching()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
         statusMenuItem.isEnabled = false
-        syncMenuItem.target = self
-        syncMenuItem.state = isSyncEnabled ? .on : .off
+        brightnessMenuItem.target = self
+        brightnessMenuItem.state = isBrightnessFollowEnabled ? .on : .off
 
         let menu = NSMenu()
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
-        menu.addItem(syncMenuItem)
+        menu.addItem(brightnessMenuItem)
         item.menu = menu
         update(isAsleep: isAsleep, healthy: true)
     }
 
     func update(isAsleep: Bool, healthy: Bool) {
-        let color: NSColor = healthy ? (isSyncEnabled ? .systemGreen : .systemGray) : .systemRed
+        let color: NSColor = healthy ? .systemGreen : .systemRed
         item.button?.image = Self.dotImage(color: color)
         let displayState = isAsleep ? "Studio Display 已熄屏" : "Studio Display 已唤醒"
-        let status = healthy ? (isSyncEnabled ? "同步正常" : "同步已暂停") : "同步异常"
-        statusMenuItem.title = "\(status) · \(displayState)"
+        let brightnessStatus = isBrightnessFollowEnabled ? "亮度跟随已开启" : "亮度跟随已关闭"
+        let status = healthy ? "同步正常" : "同步异常"
+        statusMenuItem.title = "\(status) · \(displayState) · \(brightnessStatus)"
         item.button?.toolTip = "iScreenBar：\(status) · \(displayState)"
         item.button?.setAccessibilityLabel("iScreenBar \(status)")
     }
 
-    @objc private func toggleSync() {
-        isSyncEnabled.toggle()
-        UserDefaults.standard.set(isSyncEnabled, forKey: "syncEnabled")
-        syncMenuItem.state = isSyncEnabled ? .on : .off
-        log(isSyncEnabled ? "已开启自动同步开关灯" : "已暂停自动同步开关灯")
+    @objc private func toggleBrightnessFollow() {
+        isBrightnessFollowEnabled.toggle()
+        UserDefaults.standard.set(isBrightnessFollowEnabled, forKey: "brightnessFollowEnabled")
+        brightnessMenuItem.state = isBrightnessFollowEnabled ? .on : .off
+        log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
     }
 
     private static func dotImage(color: NSColor) -> NSImage {
@@ -69,6 +71,9 @@ private final class StatusIndicator: NSObject {
 private final class LampController {
     private let manager: IOHIDManager
     private var device: IOHIDDevice?
+    private let inputBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
+    private(set) var currentBrightness: Int?
+    private(set) var statusRevision = 0
 
     init?() {
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
@@ -84,10 +89,16 @@ private final class LampController {
             return nil
         }
         device = first
+        configureInputCallback(for: first)
+        requestStatus()
     }
 
     deinit {
+        if let device {
+            IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        }
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        inputBuffer.deallocate()
     }
 
     func setPower(on: Bool) -> Bool {
@@ -106,8 +117,32 @@ private final class LampController {
         return true
     }
 
+    func setBrightness(_ brightness: Int) -> Bool {
+        let value = UInt8(clamping: brightness)
+        var report = [UInt8](repeating: 0, count: 33)
+        report[0] = 0x01
+        report[1] = 0xF0
+        report[2] = 0x04
+        report[3] = 0x06
+        report[4] = UInt8(truncatingIfNeeded: 0xF0 + 0x04 + 0x06 + Int(value) * 2)
+        report[5] = value
+        report[6] = value
+        guard send(report) else { return false }
+        log("灯亮度已调整为 \(brightness)%")
+        return true
+    }
+
+    func requestStatus() {
+        var report = [UInt8](repeating: 0, count: 33)
+        report[0] = 0x01
+        report[1] = 0xF0
+        report[2] = 0x20
+        report[3] = 0x04
+        report[4] = 0x14
+        _ = send(report)
+    }
+
     private func sendPowerReport(on: Bool) -> Bool {
-        guard let device else { return false }
         var report = [UInt8](repeating: 0, count: 33)
         report[0] = 0x01
         report[1] = 0xF0
@@ -115,6 +150,11 @@ private final class LampController {
         report[3] = 0x05
         report[4] = on ? 0xFD : 0xFC
         report[5] = on ? 0x01 : 0x00
+        return send(report)
+    }
+
+    private func send(_ report: [UInt8]) -> Bool {
+        guard let device else { return false }
         let result = report.withUnsafeBytes { bytes in
             IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 1,
                                  bytes.bindMemory(to: UInt8.self).baseAddress!, report.count)
@@ -123,6 +163,23 @@ private final class LampController {
             log(String(format: "USB HID 指令失败：0x%08X", result))
         }
         return result == kIOReturnSuccess
+    }
+
+    private func configureInputCallback(for device: IOHIDDevice) {
+        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceRegisterInputReportCallback(
+            device, inputBuffer, 64,
+            { context, _, _, _, _, report, reportLength in
+                guard let context, reportLength >= 5 else { return }
+                let controller = Unmanaged<LampController>.fromOpaque(context).takeUnretainedValue()
+                if report[0] == 0x02, report[1] == 0xE1, report[2] == 0x20,
+                   report[3] == 0x0D, (report[4] == 0x7D || report[4] == 0x7E), reportLength >= 15 {
+                    controller.currentBrightness = Int(report[10])
+                    controller.statusRevision += 1
+                }
+            },
+            Unmanaged.passUnretained(self).toOpaque()
+        )
     }
 
     private func reconnect() -> Bool {
@@ -134,7 +191,34 @@ private final class LampController {
             return false
         }
         device = first
+        configureInputCallback(for: first)
         return true
+    }
+}
+
+private final class DisplayBrightnessReader {
+    private typealias GetBrightness = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+    private let handle: UnsafeMutableRawPointer?
+    private let getter: GetBrightness?
+
+    init() {
+        handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY)
+        if let handle, let symbol = dlsym(handle, "DisplayServicesGetBrightness") {
+            getter = unsafeBitCast(symbol, to: GetBrightness.self)
+        } else {
+            getter = nil
+        }
+    }
+
+    deinit {
+        if let handle { dlclose(handle) }
+    }
+
+    func percent(for displayID: CGDirectDisplayID) -> Int? {
+        guard let getter else { return nil }
+        var value: Float = 0
+        guard getter(displayID, &value) == 0 else { return nil }
+        return Int((max(0, min(1, value)) * 100).rounded())
     }
 }
 
@@ -153,32 +237,41 @@ guard let displayID = studioDisplayID() else {
     exit(2)
 }
 guard let lamp = LampController() else { exit(3) }
+private let displayBrightnessReader = DisplayBrightnessReader()
 
 log("开始监听 Studio Display ID=\(displayID)，分辨率=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))")
 var wasAsleep = CGDisplayIsAsleep(displayID) != 0
 var helperTurnedLampOff = false
 private let statusIndicator = StatusIndicator(isAsleep: wasAsleep)
-var wasSyncEnabled = statusIndicator.isSyncEnabled
-log(wasSyncEnabled ? "自动同步开关灯已开启" : "自动同步开关灯已暂停")
+var wasBrightnessFollowEnabled = statusIndicator.isBrightnessFollowEnabled
+var brightnessOffset: Int?
+var anchorStatusRevision: Int?
+var lastDisplayBrightness: Int?
+var lastStatusRequest = Date.distantPast
+if wasBrightnessFollowEnabled {
+    anchorStatusRevision = lamp.statusRevision
+    lamp.requestStatus()
+    log("Studio Display 亮度跟随已开启，正在锁定当前亮度差")
+}
 
 while true {
     let isAsleep = CGDisplayIsAsleep(displayID) != 0
-    let syncEnabled = statusIndicator.isSyncEnabled
+    let brightnessFollowEnabled = statusIndicator.isBrightnessFollowEnabled
 
-    if syncEnabled != wasSyncEnabled {
-        if syncEnabled, isAsleep {
-            helperTurnedLampOff = lamp.setPower(on: false)
-            statusIndicator.update(isAsleep: true, healthy: helperTurnedLampOff)
-        } else if syncEnabled, helperTurnedLampOff {
-            let restored = lamp.setPower(on: true)
-            helperTurnedLampOff = !restored
-            statusIndicator.update(isAsleep: false, healthy: restored)
+    if brightnessFollowEnabled != wasBrightnessFollowEnabled {
+        brightnessOffset = nil
+        lastDisplayBrightness = nil
+        if brightnessFollowEnabled {
+            anchorStatusRevision = lamp.statusRevision
+            lamp.requestStatus()
         } else {
-            statusIndicator.update(isAsleep: isAsleep, healthy: true)
+            anchorStatusRevision = nil
         }
-        wasSyncEnabled = syncEnabled
-        wasAsleep = isAsleep
-    } else if syncEnabled, isAsleep != wasAsleep {
+        wasBrightnessFollowEnabled = brightnessFollowEnabled
+        statusIndicator.update(isAsleep: isAsleep, healthy: true)
+    }
+
+    if isAsleep != wasAsleep {
         if isAsleep {
             log("检测到 Studio Display 熄屏")
             helperTurnedLampOff = lamp.setPower(on: false)
@@ -194,9 +287,28 @@ while true {
             }
         }
         wasAsleep = isAsleep
-    } else if !syncEnabled, isAsleep != wasAsleep {
-        wasAsleep = isAsleep
-        statusIndicator.update(isAsleep: isAsleep, healthy: true)
+    }
+
+    if brightnessFollowEnabled, !isAsleep,
+       let displayBrightness = displayBrightnessReader.percent(for: displayID) {
+        if let anchorRevision = anchorStatusRevision,
+           lamp.statusRevision > anchorRevision,
+           let lampBrightness = lamp.currentBrightness {
+            brightnessOffset = lampBrightness - displayBrightness
+            lastDisplayBrightness = displayBrightness
+            anchorStatusRevision = nil
+            log("已锁定亮度差：iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%")
+        } else if let brightnessOffset, displayBrightness != lastDisplayBrightness {
+            let target = max(1, min(100, displayBrightness + brightnessOffset))
+            if lamp.setBrightness(target) {
+                lastDisplayBrightness = displayBrightness
+            }
+        }
+    }
+
+    if Date().timeIntervalSince(lastStatusRequest) >= 2 {
+        lamp.requestStatus()
+        lastStatusRequest = Date()
     }
     RunLoop.current.run(until: Date(timeIntervalSinceNow: pollInterval))
 }
