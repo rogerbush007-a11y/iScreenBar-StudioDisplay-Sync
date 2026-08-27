@@ -68,6 +68,22 @@ private final class LampController {
     }
 
     func setPower(on: Bool) -> Bool {
+        if sendPowerReport(on: on) {
+            log("灯已\(on ? "开启" : "关闭")")
+            return true
+        }
+
+        log("USB HID 连接已失效，正在重新连接")
+        guard reconnect(), sendPowerReport(on: on) else {
+            log("USB HID 重连后指令仍失败")
+            return false
+        }
+
+        log("重连成功，灯已\(on ? "开启" : "关闭")")
+        return true
+    }
+
+    private func sendPowerReport(on: Bool) -> Bool {
         guard let device else { return false }
         var report = [UInt8](repeating: 0, count: 33)
         report[0] = 0x01
@@ -80,12 +96,22 @@ private final class LampController {
             IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 1,
                                  bytes.bindMemory(to: UInt8.self).baseAddress!, report.count)
         }
-        if result == kIOReturnSuccess {
-            log("灯已\(on ? "开启" : "关闭")")
-            return true
+        if result != kIOReturnSuccess {
+            log(String(format: "USB HID 指令失败：0x%08X", result))
         }
-        log(String(format: "USB HID 指令失败：0x%08X", result))
-        return false
+        return result == kIOReturnSuccess
+    }
+
+    private func reconnect() -> Bool {
+        device = nil
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess,
+              let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>,
+              let first = devices.first else {
+            return false
+        }
+        device = first
+        return true
     }
 }
 
