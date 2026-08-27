@@ -171,7 +171,7 @@ private final class LampController {
                 guard let context, reportLength >= 5 else { return }
                 let controller = Unmanaged<LampController>.fromOpaque(context).takeUnretainedValue()
                 if report[0] == 0x02, report[1] == 0xE1, report[2] == 0x20,
-                   report[3] == 0x0D, (report[4] == 0x7D || report[4] == 0x7E), reportLength >= 15 {
+                   report[3] == 0x0D, reportLength >= 15 {
                     controller.currentBrightness = Int(report[10])
                     controller.statusRevision += 1
                 }
