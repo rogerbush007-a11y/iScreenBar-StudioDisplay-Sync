@@ -27,8 +27,8 @@ private final class StatusIndicator: NSObject {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
-        item.button?.title = "🔅"
-        item.button?.image = nil
+        item.button?.title = ""
+        item.button?.imagePosition = .imageOnly
 
         statusMenuItem.isEnabled = false
         brightnessMenuItem.target = self
@@ -43,6 +43,7 @@ private final class StatusIndicator: NSObject {
     }
 
     func update(isAsleep: Bool, healthy: Bool) {
+        updateIcon(healthy: healthy)
         let displayState = isAsleep ? "Studio Display 已熄屏" : "Studio Display 已唤醒"
         let brightnessStatus = isBrightnessFollowEnabled ? "亮度跟随已开启" : "亮度跟随已关闭"
         let status = healthy ? "同步正常" : "同步异常"
@@ -55,7 +56,19 @@ private final class StatusIndicator: NSObject {
         isBrightnessFollowEnabled.toggle()
         UserDefaults.standard.set(isBrightnessFollowEnabled, forKey: "brightnessFollowEnabled")
         brightnessMenuItem.state = isBrightnessFollowEnabled ? .on : .off
+        updateIcon(healthy: true)
         log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
+    }
+
+    private func updateIcon(healthy: Bool) {
+        let color: NSColor = healthy
+            ? (isBrightnessFollowEnabled ? .systemYellow : .secondaryLabelColor)
+            : .systemRed
+        let configuration = NSImage.SymbolConfiguration(paletteColors: [color])
+        let symbol = NSImage(systemSymbolName: "sun.min.fill", accessibilityDescription: "亮度同步")?
+            .withSymbolConfiguration(configuration)
+        symbol?.isTemplate = false
+        item.button?.image = symbol
     }
 
 }
