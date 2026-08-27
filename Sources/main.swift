@@ -16,11 +16,12 @@ private func log(_ message: String) {
 
 private final class StatusIndicator: NSObject {
     private let item: NSStatusItem
-    private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let brightnessMenuItem = NSMenuItem(title: "亮度同步", action: #selector(toggleBrightnessFollow), keyEquivalent: "")
     private(set) var isBrightnessFollowEnabled: Bool
+    private var isHealthy = true
+    private var isAsleep: Bool
 
     init(isAsleep: Bool) {
+        self.isAsleep = isAsleep
         isBrightnessFollowEnabled = UserDefaults.standard.bool(forKey: "brightnessFollowEnabled")
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.finishLaunching()
@@ -29,34 +30,26 @@ private final class StatusIndicator: NSObject {
 
         item.button?.title = ""
         item.button?.imagePosition = .imageOnly
-
-        statusMenuItem.isEnabled = false
-        brightnessMenuItem.target = self
-        brightnessMenuItem.state = isBrightnessFollowEnabled ? .on : .off
-
-        let menu = NSMenu()
-        menu.addItem(statusMenuItem)
-        menu.addItem(.separator())
-        menu.addItem(brightnessMenuItem)
-        item.menu = menu
+        item.button?.target = self
+        item.button?.action = #selector(toggleBrightnessFollow)
         update(isAsleep: isAsleep, healthy: true)
     }
 
     func update(isAsleep: Bool, healthy: Bool) {
+        self.isAsleep = isAsleep
+        isHealthy = healthy
         updateIcon(healthy: healthy)
         let displayState = isAsleep ? "Studio Display 已熄屏" : "Studio Display 已唤醒"
         let brightnessStatus = isBrightnessFollowEnabled ? "亮度跟随已开启" : "亮度跟随已关闭"
         let status = healthy ? "同步正常" : "同步异常"
-        statusMenuItem.title = "\(status) · \(displayState) · \(brightnessStatus)"
-        item.button?.toolTip = "iScreenBar：\(status) · \(displayState)"
+        item.button?.toolTip = "iScreenBar：\(status) · \(displayState) · \(brightnessStatus)"
         item.button?.setAccessibilityLabel("iScreenBar \(status)")
     }
 
     @objc private func toggleBrightnessFollow() {
         isBrightnessFollowEnabled.toggle()
         UserDefaults.standard.set(isBrightnessFollowEnabled, forKey: "brightnessFollowEnabled")
-        brightnessMenuItem.state = isBrightnessFollowEnabled ? .on : .off
-        updateIcon(healthy: true)
+        update(isAsleep: isAsleep, healthy: isHealthy)
         log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
     }
 
