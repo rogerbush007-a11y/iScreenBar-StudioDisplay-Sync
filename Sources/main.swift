@@ -17,7 +17,7 @@ private func log(_ message: String) {
 private final class StatusIndicator: NSObject {
     private let item: NSStatusItem
     private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let brightnessMenuItem = NSMenuItem(title: "跟随 Studio Display 亮度", action: #selector(toggleBrightnessFollow), keyEquivalent: "")
+    private let brightnessMenuItem = NSMenuItem(title: "亮度同步", action: #selector(toggleBrightnessFollow), keyEquivalent: "")
     private(set) var isBrightnessFollowEnabled: Bool
 
     init(isAsleep: Bool) {
@@ -26,6 +26,9 @@ private final class StatusIndicator: NSObject {
         NSApplication.shared.finishLaunching()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+
+        item.button?.title = "🔅"
+        item.button?.image = nil
 
         statusMenuItem.isEnabled = false
         brightnessMenuItem.target = self
@@ -40,8 +43,6 @@ private final class StatusIndicator: NSObject {
     }
 
     func update(isAsleep: Bool, healthy: Bool) {
-        let color: NSColor = healthy ? .systemGreen : .systemRed
-        item.button?.image = Self.dotImage(color: color)
         let displayState = isAsleep ? "Studio Display 已熄屏" : "Studio Display 已唤醒"
         let brightnessStatus = isBrightnessFollowEnabled ? "亮度跟随已开启" : "亮度跟随已关闭"
         let status = healthy ? "同步正常" : "同步异常"
@@ -57,15 +58,6 @@ private final class StatusIndicator: NSObject {
         log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
     }
 
-    private static func dotImage(color: NSColor) -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18))
-        image.lockFocus()
-        color.setFill()
-        NSBezierPath(ovalIn: NSRect(x: 5, y: 5, width: 8, height: 8)).fill()
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
-    }
 }
 
 private final class LampController {
@@ -254,7 +246,7 @@ if wasBrightnessFollowEnabled {
     log("Studio Display 亮度跟随已开启，正在锁定当前亮度差")
 }
 
-while true {
+private func pollDisplayAndLamp() {
     let isAsleep = CGDisplayIsAsleep(displayID) != 0
     let brightnessFollowEnabled = statusIndicator.isBrightnessFollowEnabled
 
@@ -310,5 +302,11 @@ while true {
         lamp.requestStatus()
         lastStatusRequest = Date()
     }
-    RunLoop.current.run(until: Date(timeIntervalSinceNow: pollInterval))
 }
+
+let pollingTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { _ in
+    pollDisplayAndLamp()
+}
+pollingTimer.tolerance = 0.05
+pollDisplayAndLamp()
+NSApplication.shared.run()
