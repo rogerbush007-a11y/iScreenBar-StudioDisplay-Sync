@@ -19,8 +19,9 @@ app, the lamp firmware, or macOS.
 - Studio Display wakes -> iScreenBar turns on.
 - Optional Studio Display brightness following that preserves the current
   brightness difference between the display and lamp.
-- Green menu-bar dot while synchronization is healthy.
-- Red menu-bar dot if a USB power command fails.
+- Menu-bar brightness icon shows the active brightness-following state.
+- The icon turns red if the USB connection or a power command fails.
+- Detects USB removal and automatically restores synchronization after the lamp reconnects.
 - Hover text shows the current display/synchronization state.
 - Starts automatically after login using a per-user LaunchAgent.
 - No network access, analytics, cloud service, or account requirement.

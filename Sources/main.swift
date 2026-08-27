@@ -73,22 +73,24 @@ private final class LampController {
     private(set) var currentBrightness: Int?
     private(set) var statusRevision = 0
 
-    init?() {
+    var isConnected: Bool { device != nil }
+
+    init() {
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let matching: [String: Any] = [
             kIOHIDVendorIDKey as String: benqVendorID,
             kIOHIDProductIDKey as String: iScreenBarProductID
         ]
         IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
-        guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess,
-              let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>,
-              let first = devices.first else {
+        guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
             log("无法打开 iScreenBar USB HID 设备")
-            return nil
+            return
         }
-        device = first
-        configureInputCallback(for: first)
-        requestStatus()
+        guard attachFirstDevice() else {
+            log("未检测到 iScreenBar USB HID 设备，等待重新连接")
+            return
+        }
+        _ = requestStatus()
     }
 
     deinit {
@@ -130,14 +132,22 @@ private final class LampController {
         return true
     }
 
-    func requestStatus() {
+    @discardableResult
+    func requestStatus() -> Bool {
         var report = [UInt8](repeating: 0, count: 33)
         report[0] = 0x01
         report[1] = 0xF0
         report[2] = 0x20
         report[3] = 0x04
         report[4] = 0x14
-        _ = send(report)
+        return send(report)
+    }
+
+    func checkConnection() -> Bool {
+        if requestStatus() { return true }
+        guard reconnect(), requestStatus() else { return false }
+        log("USB HID 已重新连接")
+        return true
     }
 
     private func sendPowerReport(on: Bool) -> Bool {
@@ -181,13 +191,18 @@ private final class LampController {
     }
 
     private func reconnect() -> Bool {
+        if let device {
+            IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        }
         device = nil
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess,
-              let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>,
-              let first = devices.first else {
-            return false
-        }
+        guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else { return false }
+        return attachFirstDevice()
+    }
+
+    private func attachFirstDevice() -> Bool {
+        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>,
+              let first = devices.first else { return false }
         device = first
         configureInputCallback(for: first)
         return true
@@ -234,7 +249,7 @@ guard let displayID = studioDisplayID() else {
     log("未找到外接显示器")
     exit(2)
 }
-guard let lamp = LampController() else { exit(3) }
+private let lamp = LampController()
 private let displayBrightnessReader = DisplayBrightnessReader()
 
 log("开始监听 Studio Display ID=\(displayID)，分辨率=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))")
@@ -246,6 +261,7 @@ var brightnessOffset: Int?
 var anchorStatusRevision: Int?
 var lastDisplayBrightness: Int?
 var lastStatusRequest = Date.distantPast
+var wasLampConnected = lamp.isConnected
 if wasBrightnessFollowEnabled {
     anchorStatusRevision = lamp.statusRevision
     lamp.requestStatus()
@@ -305,7 +321,29 @@ private func pollDisplayAndLamp() {
     }
 
     if Date().timeIntervalSince(lastStatusRequest) >= 2 {
-        lamp.requestStatus()
+        let connected = lamp.checkConnection()
+        if connected != wasLampConnected {
+            if connected {
+                log("检测到 iScreenBar 已恢复连接，正在恢复同步状态")
+                if isAsleep {
+                    helperTurnedLampOff = lamp.setPower(on: false)
+                } else {
+                    _ = lamp.setPower(on: true)
+                }
+                if brightnessFollowEnabled {
+                    brightnessOffset = nil
+                    lastDisplayBrightness = nil
+                    anchorStatusRevision = lamp.statusRevision
+                    lamp.requestStatus()
+                }
+            } else {
+                log("检测到 iScreenBar 已断开")
+                brightnessOffset = nil
+                anchorStatusRevision = nil
+            }
+            wasLampConnected = connected
+        }
+        statusIndicator.update(isAsleep: isAsleep, healthy: connected)
         lastStatusRequest = Date()
     }
 }
