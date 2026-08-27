@@ -16,11 +16,21 @@ private func log(_ message: String) {
 
 private final class StatusIndicator: NSObject {
     private let item: NSStatusItem
+    private let lamp: LampController
+    private let popover = NSPopover()
+    private let powerSwitch = NSButton(checkboxWithTitle: "开灯", target: nil, action: nil)
+    private let brightnessSlider = NSSlider(value: 50, minValue: 1, maxValue: 100, target: nil, action: nil)
+    private let brightnessValueLabel = NSTextField(labelWithString: "50%")
+    private let temperatureSlider = NSSlider(value: 5000, minValue: 2700, maxValue: 6500, target: nil, action: nil)
+    private let temperatureValueLabel = NSTextField(labelWithString: "5000K")
+    private let autoLightSwitch = NSButton(checkboxWithTitle: "自动感光", target: nil, action: nil)
+    private let brightnessFollowSwitch = NSButton(checkboxWithTitle: "跟随 Studio Display 亮度", target: nil, action: nil)
     private(set) var isBrightnessFollowEnabled: Bool
     private var isHealthy = true
     private var isAsleep: Bool
 
-    init(isAsleep: Bool) {
+    init(isAsleep: Bool, lamp: LampController) {
+        self.lamp = lamp
         self.isAsleep = isAsleep
         isBrightnessFollowEnabled = UserDefaults.standard.bool(forKey: "brightnessFollowEnabled")
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -31,7 +41,8 @@ private final class StatusIndicator: NSObject {
         item.button?.title = ""
         item.button?.imagePosition = .imageOnly
         item.button?.target = self
-        item.button?.action = #selector(toggleBrightnessFollow)
+        item.button?.action = #selector(togglePanel)
+        configurePanel()
         update(isAsleep: isAsleep, healthy: true)
     }
 
@@ -44,13 +55,146 @@ private final class StatusIndicator: NSObject {
         let status = healthy ? "同步正常" : "同步异常"
         item.button?.toolTip = "iScreenBar：\(status) · \(displayState) · \(brightnessStatus)"
         item.button?.setAccessibilityLabel("iScreenBar \(status)")
+        if popover.isShown { refreshControls() }
     }
 
-    @objc private func toggleBrightnessFollow() {
-        isBrightnessFollowEnabled.toggle()
+    @objc private func togglePanel() {
+        guard let button = item.button else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            lamp.requestStatus()
+            refreshControls()
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    @objc private func powerChanged() {
+        let requested = powerSwitch.state == .on
+        if !lamp.setPower(on: requested) { powerSwitch.state = requested ? .off : .on }
+        lamp.requestStatus()
+    }
+
+    @objc private func brightnessChanged() {
+        let value = Int(brightnessSlider.doubleValue.rounded())
+        brightnessValueLabel.stringValue = "\(value)%"
+        _ = lamp.setBrightness(value)
+        lamp.requestStatus()
+    }
+
+    @objc private func temperatureChanged() {
+        let value = Int((temperatureSlider.doubleValue / 100).rounded()) * 100
+        temperatureSlider.doubleValue = Double(value)
+        temperatureValueLabel.stringValue = "\(value)K"
+        _ = lamp.setTemperature(value)
+        lamp.requestStatus()
+    }
+
+    @objc private func autoLightChanged() {
+        let requested = autoLightSwitch.state == .on
+        if lamp.setAutoLight(enabled: requested) {
+            if requested, isBrightnessFollowEnabled {
+                isBrightnessFollowEnabled = false
+                brightnessFollowSwitch.state = .off
+                UserDefaults.standard.set(false, forKey: "brightnessFollowEnabled")
+                update(isAsleep: isAsleep, healthy: isHealthy)
+                log("自动感光已开启，同时关闭 Studio Display 亮度跟随")
+            }
+        } else {
+            autoLightSwitch.state = requested ? .off : .on
+        }
+        lamp.requestStatus()
+    }
+
+    @objc private func brightnessFollowChanged() {
+        isBrightnessFollowEnabled = brightnessFollowSwitch.state == .on
+        if isBrightnessFollowEnabled, lamp.isAutoLightEnabled == true {
+            _ = lamp.setAutoLight(enabled: false)
+            autoLightSwitch.state = .off
+            log("Studio Display 亮度跟随已开启，同时关闭灯具自动感光")
+        }
         UserDefaults.standard.set(isBrightnessFollowEnabled, forKey: "brightnessFollowEnabled")
         update(isAsleep: isAsleep, healthy: isHealthy)
         log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
+    }
+
+    private func configurePanel() {
+        powerSwitch.setButtonType(.switch)
+        autoLightSwitch.setButtonType(.switch)
+        brightnessFollowSwitch.setButtonType(.switch)
+        powerSwitch.target = self
+        powerSwitch.action = #selector(powerChanged)
+        brightnessSlider.target = self
+        brightnessSlider.action = #selector(brightnessChanged)
+        brightnessSlider.isContinuous = false
+        temperatureSlider.target = self
+        temperatureSlider.action = #selector(temperatureChanged)
+        temperatureSlider.isContinuous = false
+        autoLightSwitch.target = self
+        autoLightSwitch.action = #selector(autoLightChanged)
+        brightnessFollowSwitch.target = self
+        brightnessFollowSwitch.action = #selector(brightnessFollowChanged)
+
+        let title = NSTextField(labelWithString: "iScreenBar 控制")
+        title.font = .boldSystemFont(ofSize: 15)
+        let brightnessRow = controlRow(title: "亮度", slider: brightnessSlider, valueLabel: brightnessValueLabel)
+        let temperatureRow = controlRow(title: "色温", slider: temperatureSlider, valueLabel: temperatureValueLabel)
+        let divider = NSBox()
+        divider.boxType = .separator
+
+        let stack = NSStackView(views: [title, powerSwitch, brightnessRow, temperatureRow, autoLightSwitch, divider, brightnessFollowSwitch])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        brightnessRow.widthAnchor.constraint(equalToConstant: 288).isActive = true
+        temperatureRow.widthAnchor.constraint(equalToConstant: 288).isActive = true
+
+        let controller = NSViewController()
+        controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 250))
+        controller.view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: controller.view.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: controller.view.bottomAnchor)
+        ])
+        popover.contentViewController = controller
+        popover.contentSize = NSSize(width: 320, height: 250)
+        popover.behavior = .transient
+    }
+
+    private func controlRow(title: String, slider: NSSlider, valueLabel: NSTextField) -> NSStackView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.widthAnchor.constraint(equalToConstant: 34).isActive = true
+        slider.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        valueLabel.alignment = .right
+        valueLabel.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        let row = NSStackView(views: [titleLabel, slider, valueLabel])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        return row
+    }
+
+    private func refreshControls() {
+        powerSwitch.state = lamp.isPowerOn == true ? .on : .off
+        autoLightSwitch.state = lamp.isAutoLightEnabled == true ? .on : .off
+        brightnessFollowSwitch.state = isBrightnessFollowEnabled ? .on : .off
+        if let brightness = lamp.currentBrightness {
+            brightnessSlider.doubleValue = Double(brightness)
+            brightnessValueLabel.stringValue = "\(brightness)%"
+        }
+        if let temperature = lamp.currentTemperature {
+            temperatureSlider.doubleValue = Double(temperature)
+            temperatureValueLabel.stringValue = "\(temperature)K"
+        }
+        let enabled = lamp.isConnected
+        powerSwitch.isEnabled = enabled
+        brightnessSlider.isEnabled = enabled
+        temperatureSlider.isEnabled = enabled
+        autoLightSwitch.isEnabled = enabled
     }
 
     private func updateIcon(healthy: Bool) {
@@ -71,6 +215,9 @@ private final class LampController {
     private var device: IOHIDDevice?
     private let inputBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
     private(set) var currentBrightness: Int?
+    private(set) var currentTemperature: Int?
+    private(set) var isPowerOn: Bool?
+    private(set) var isAutoLightEnabled: Bool?
     private(set) var statusRevision = 0
 
     var isConnected: Bool { device != nil }
@@ -98,6 +245,7 @@ private final class LampController {
 
     func setPower(on: Bool) -> Bool {
         if sendPowerReport(on: on) {
+            isPowerOn = on
             log("灯已\(on ? "开启" : "关闭")")
             return true
         }
@@ -108,22 +256,32 @@ private final class LampController {
             return false
         }
 
+        isPowerOn = on
         log("重连成功，灯已\(on ? "开启" : "关闭")")
         return true
     }
 
     func setBrightness(_ brightness: Int) -> Bool {
-        let value = UInt8(clamping: brightness)
-        var report = [UInt8](repeating: 0, count: 33)
-        report[0] = 0x01
-        report[1] = 0xF0
-        report[2] = 0x04
-        report[3] = 0x06
-        report[4] = UInt8(truncatingIfNeeded: 0xF0 + 0x04 + 0x06 + Int(value) * 2)
-        report[5] = value
-        report[6] = value
-        guard send(report) else { return false }
+        let value = UInt8(clamping: max(1, min(100, brightness)))
+        guard sendCommand(0x04, payload: [value, value]) else { return false }
+        currentBrightness = Int(value)
         log("灯亮度已调整为 \(brightness)%")
+        return true
+    }
+
+    func setTemperature(_ temperature: Int) -> Bool {
+        let value = max(2700, min(6500, temperature))
+        let payload = [UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF)]
+        guard sendCommand(0x03, payload: payload) else { return false }
+        currentTemperature = value
+        log("灯色温已调整为 \(value)K")
+        return true
+    }
+
+    func setAutoLight(enabled: Bool) -> Bool {
+        guard sendCommand(0x06, payload: [enabled ? 1 : 0]) else { return false }
+        isAutoLightEnabled = enabled
+        log(enabled ? "已开启灯具自动感光" : "已关闭灯具自动感光")
         return true
     }
 
@@ -156,6 +314,19 @@ private final class LampController {
         return send(report)
     }
 
+    private func sendCommand(_ command: UInt8, payload: [UInt8]) -> Bool {
+        var report = [UInt8](repeating: 0, count: 33)
+        report[0] = 0x01
+        report[1] = 0xF0
+        report[2] = command
+        report[3] = UInt8(payload.count + 4)
+        report[4] = UInt8(truncatingIfNeeded: Int(report[1]) + Int(command) + Int(report[3]) + payload.reduce(0) { $0 + Int($1) })
+        for (index, value) in payload.enumerated() {
+            report[5 + index] = value
+        }
+        return send(report)
+    }
+
     private func send(_ report: [UInt8]) -> Bool {
         guard let device else { return false }
         let result = report.withUnsafeBytes { bytes in
@@ -177,6 +348,11 @@ private final class LampController {
                 let controller = Unmanaged<LampController>.fromOpaque(context).takeUnretainedValue()
                 if report[0] == 0x02, report[1] == 0xE1, report[2] == 0x20,
                    report[3] == 0x0D, reportLength >= 15 {
+                    if controller.isPowerOn == nil {
+                        controller.isPowerOn = (report[6] & 0x10) != 0
+                    }
+                    controller.isAutoLightEnabled = (report[6] & 0x20) != 0
+                    controller.currentTemperature = (Int(report[8]) << 8) | Int(report[9])
                     controller.currentBrightness = Int(report[10])
                     controller.statusRevision += 1
                 }
@@ -261,7 +437,7 @@ private let displayBrightnessReader = DisplayBrightnessReader()
 log("开始监听 Studio Display ID=\(displayID)，分辨率=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))")
 var wasAsleep = CGDisplayIsAsleep(displayID) != 0
 var helperTurnedLampOff = false
-private let statusIndicator = StatusIndicator(isAsleep: wasAsleep)
+private let statusIndicator = StatusIndicator(isAsleep: wasAsleep, lamp: lamp)
 var wasBrightnessFollowEnabled = statusIndicator.isBrightnessFollowEnabled
 var brightnessOffset: Int?
 var anchorStatusRevision: Int?
@@ -314,6 +490,10 @@ private func pollDisplayAndLamp() {
         if let anchorRevision = anchorStatusRevision,
            lamp.statusRevision > anchorRevision,
            let lampBrightness = lamp.currentBrightness {
+            if lamp.isAutoLightEnabled == true {
+                _ = lamp.setAutoLight(enabled: false)
+                log("Studio Display 亮度跟随生效，同时关闭灯具自动感光")
+            }
             brightnessOffset = lampBrightness - displayBrightness
             lastDisplayBrightness = displayBrightness
             anchorStatusRevision = nil

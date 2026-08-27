@@ -17,6 +17,7 @@ app, the lamp firmware, or macOS.
 
 - Studio Display sleeps -> iScreenBar turns off.
 - Studio Display wakes -> iScreenBar turns on.
+- Menu-bar control panel for lamp power, brightness, color temperature, and automatic ambient-light adjustment.
 - Optional Studio Display brightness following that preserves the current
   brightness difference between the display and lamp.
 - Menu-bar brightness icon shows the active brightness-following state.
@@ -116,7 +117,9 @@ signed locally.
 - The utility intentionally synchronizes power state: wake always sends the
   lamp-on command after the utility turned it off for display sleep.
 - Sleep/wake power synchronization is always enabled.
-- Click the menu-bar dot to enable Studio Display brightness following. Enabling it locks the current brightness difference; disabling it leaves the lamp at its current brightness.
+- Click the menu-bar brightness icon to open the control panel.
+- Automatic ambient-light adjustment and Studio Display brightness following are mutually exclusive, so only one source controls lamp brightness at a time.
+- Enabling Studio Display brightness following locks the current brightness difference; disabling it leaves the lamp at its current brightness.
 - BenQ's own automatic brightness mode uses the lamp's ambient-light sensor and is separate from this feature.
 - If the green dot disappears, the LaunchAgent is not running.
 - A USB failure changes the dot to red and writes the error to the local log.
