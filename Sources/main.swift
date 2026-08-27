@@ -67,7 +67,7 @@ private final class StatusIndicator: NSObject {
 }
 
 private final class LampController {
-    private let manager: IOHIDManager
+    private var manager: IOHIDManager
     private var device: IOHIDDevice?
     private let inputBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
     private(set) var currentBrightness: Int?
@@ -76,12 +76,7 @@ private final class LampController {
     var isConnected: Bool { device != nil }
 
     init() {
-        manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        let matching: [String: Any] = [
-            kIOHIDVendorIDKey as String: benqVendorID,
-            kIOHIDProductIDKey as String: iScreenBarProductID
-        ]
-        IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
+        manager = Self.makeManager()
         guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
             log("无法打开 iScreenBar USB HID 设备")
             return
@@ -196,8 +191,19 @@ private final class LampController {
         }
         device = nil
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        manager = Self.makeManager()
         guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else { return false }
         return attachFirstDevice()
+    }
+
+    private static func makeManager() -> IOHIDManager {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        let matching: [String: Any] = [
+            kIOHIDVendorIDKey as String: benqVendorID,
+            kIOHIDProductIDKey as String: iScreenBarProductID
+        ]
+        IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
+        return manager
     }
 
     private func attachFirstDevice() -> Bool {
