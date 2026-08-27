@@ -13,23 +13,46 @@ private func log(_ message: String) {
     fflush(stdout)
 }
 
-private final class StatusIndicator {
+private final class StatusIndicator: NSObject {
     private let item: NSStatusItem
+    private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let syncMenuItem = NSMenuItem(title: "自动同步开关灯", action: #selector(toggleSync), keyEquivalent: "")
+    private(set) var isSyncEnabled: Bool
 
     init(isAsleep: Bool) {
+        isSyncEnabled = UserDefaults.standard.object(forKey: "syncEnabled") as? Bool ?? true
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.finishLaunching()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        super.init()
+
+        statusMenuItem.isEnabled = false
+        syncMenuItem.target = self
+        syncMenuItem.state = isSyncEnabled ? .on : .off
+
+        let menu = NSMenu()
+        menu.addItem(statusMenuItem)
+        menu.addItem(.separator())
+        menu.addItem(syncMenuItem)
+        item.menu = menu
         update(isAsleep: isAsleep, healthy: true)
     }
 
     func update(isAsleep: Bool, healthy: Bool) {
-        let color: NSColor = healthy ? .systemGreen : .systemRed
+        let color: NSColor = healthy ? (isSyncEnabled ? .systemGreen : .systemGray) : .systemRed
         item.button?.image = Self.dotImage(color: color)
         let displayState = isAsleep ? "Studio Display 已熄屏" : "Studio Display 已唤醒"
-        let status = healthy ? "同步正常" : "同步异常"
+        let status = healthy ? (isSyncEnabled ? "同步正常" : "同步已暂停") : "同步异常"
+        statusMenuItem.title = "\(status) · \(displayState)"
         item.button?.toolTip = "iScreenBar：\(status) · \(displayState)"
         item.button?.setAccessibilityLabel("iScreenBar \(status)")
+    }
+
+    @objc private func toggleSync() {
+        isSyncEnabled.toggle()
+        UserDefaults.standard.set(isSyncEnabled, forKey: "syncEnabled")
+        syncMenuItem.state = isSyncEnabled ? .on : .off
+        log(isSyncEnabled ? "已开启自动同步开关灯" : "已暂停自动同步开关灯")
     }
 
     private static func dotImage(color: NSColor) -> NSImage {
@@ -135,10 +158,27 @@ log("开始监听 Studio Display ID=\(displayID)，分辨率=\(CGDisplayPixelsWi
 var wasAsleep = CGDisplayIsAsleep(displayID) != 0
 var helperTurnedLampOff = false
 private let statusIndicator = StatusIndicator(isAsleep: wasAsleep)
+var wasSyncEnabled = statusIndicator.isSyncEnabled
+log(wasSyncEnabled ? "自动同步开关灯已开启" : "自动同步开关灯已暂停")
 
 while true {
     let isAsleep = CGDisplayIsAsleep(displayID) != 0
-    if isAsleep != wasAsleep {
+    let syncEnabled = statusIndicator.isSyncEnabled
+
+    if syncEnabled != wasSyncEnabled {
+        if syncEnabled, isAsleep {
+            helperTurnedLampOff = lamp.setPower(on: false)
+            statusIndicator.update(isAsleep: true, healthy: helperTurnedLampOff)
+        } else if syncEnabled, helperTurnedLampOff {
+            let restored = lamp.setPower(on: true)
+            helperTurnedLampOff = !restored
+            statusIndicator.update(isAsleep: false, healthy: restored)
+        } else {
+            statusIndicator.update(isAsleep: isAsleep, healthy: true)
+        }
+        wasSyncEnabled = syncEnabled
+        wasAsleep = isAsleep
+    } else if syncEnabled, isAsleep != wasAsleep {
         if isAsleep {
             log("检测到 Studio Display 熄屏")
             helperTurnedLampOff = lamp.setPower(on: false)
@@ -154,6 +194,9 @@ while true {
             }
         }
         wasAsleep = isAsleep
+    } else if !syncEnabled, isAsleep != wasAsleep {
+        wasAsleep = isAsleep
+        statusIndicator.update(isAsleep: isAsleep, healthy: true)
     }
     RunLoop.current.run(until: Date(timeIntervalSinceNow: pollInterval))
 }

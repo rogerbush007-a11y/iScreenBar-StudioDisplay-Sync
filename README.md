@@ -112,7 +112,8 @@ signed locally.
 
 - The utility intentionally synchronizes power state: wake always sends the
   lamp-on command after the utility turned it off for display sleep.
-- It does not control brightness or color temperature.
+- Click the menu-bar dot to pause or resume automatic sleep/wake synchronization.
+- It does not control brightness or color temperature; BenQ's automatic brightness mode uses the lamp's ambient-light sensor rather than the Mac display brightness.
 - If the green dot disappears, the LaunchAgent is not running.
 - A USB failure changes the dot to red and writes the error to the local log.
 - The implementation uses two device-specific 33-byte HID output reports.
