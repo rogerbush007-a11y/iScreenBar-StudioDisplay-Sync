@@ -23,7 +23,10 @@ private final class StatusIndicator: NSObject {
     private let brightnessValueLabel = NSTextField(labelWithString: "50%")
     private let temperatureSlider = NSSlider(value: 5000, minValue: 2700, maxValue: 6500, target: nil, action: nil)
     private let temperatureValueLabel = NSTextField(labelWithString: "5000K")
-    private let autoLightSwitch = NSButton(checkboxWithTitle: "自动感光", target: nil, action: nil)
+    private let autoLightSwitch = NSButton(checkboxWithTitle: "自动感光（状态）", target: nil, action: nil)
+    private let presenceSwitch = NSButton(checkboxWithTitle: "入座检测", target: nil, action: nil)
+    private let videoModeSwitch = NSButton(checkboxWithTitle: "视频模式", target: nil, action: nil)
+    private let presetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let brightnessFollowSwitch = NSButton(checkboxWithTitle: "跟随 Studio Display 亮度", target: nil, action: nil)
     private(set) var isBrightnessFollowEnabled: Bool
     private var isHealthy = true
@@ -76,6 +79,7 @@ private final class StatusIndicator: NSObject {
     }
 
     @objc private func brightnessChanged() {
+        presetPopup.selectItem(at: 0)
         let value = Int(brightnessSlider.doubleValue.rounded())
         brightnessValueLabel.stringValue = "\(value)%"
         _ = lamp.setBrightness(value)
@@ -83,6 +87,7 @@ private final class StatusIndicator: NSObject {
     }
 
     @objc private func temperatureChanged() {
+        presetPopup.selectItem(at: 0)
         let value = Int((temperatureSlider.doubleValue / 100).rounded()) * 100
         temperatureSlider.doubleValue = Double(value)
         temperatureValueLabel.stringValue = "\(value)K"
@@ -90,28 +95,50 @@ private final class StatusIndicator: NSObject {
         lamp.requestStatus()
     }
 
-    @objc private func autoLightChanged() {
-        let requested = autoLightSwitch.state == .on
-        if lamp.setAutoLight(enabled: requested) {
-            if requested, isBrightnessFollowEnabled {
-                isBrightnessFollowEnabled = false
-                brightnessFollowSwitch.state = .off
-                UserDefaults.standard.set(false, forKey: "brightnessFollowEnabled")
-                update(isAsleep: isAsleep, healthy: isHealthy)
-                log("自动感光已开启，同时关闭 Studio Display 亮度跟随")
-            }
-        } else {
-            autoLightSwitch.state = requested ? .off : .on
+    @objc private func presenceChanged() {
+        let requested = presenceSwitch.state == .on
+        if !lamp.setPresenceDetection(enabled: requested) {
+            presenceSwitch.state = requested ? .off : .on
         }
+        lamp.requestStatus()
+    }
+
+    @objc private func videoModeChanged() {
+        let requested = videoModeSwitch.state == .on
+        if !lamp.setVideoMode(enabled: requested) {
+            videoModeSwitch.state = requested ? .off : .on
+        }
+        lamp.requestStatus()
+    }
+
+    @objc private func presetChanged() {
+        let presets: [(brightness: Int, temperature: Int, video: Bool)] = [
+            (47, 5500, false),
+            (60, 5000, false),
+            (30, 3500, false),
+            (55, 4500, true)
+        ]
+        let index = presetPopup.indexOfSelectedItem
+        guard index > 0, index < presets.count else { return }
+        let preset = presets[index]
+        isBrightnessFollowEnabled = false
+        brightnessFollowSwitch.state = .off
+        UserDefaults.standard.set(false, forKey: "brightnessFollowEnabled")
+        _ = lamp.setPower(on: true)
+        _ = lamp.setBrightness(preset.brightness)
+        _ = lamp.setTemperature(preset.temperature)
+        _ = lamp.setVideoMode(enabled: preset.video)
+        refreshControls()
+        log("已应用模式预设：\(presetPopup.titleOfSelectedItem ?? "")")
         lamp.requestStatus()
     }
 
     @objc private func brightnessFollowChanged() {
         isBrightnessFollowEnabled = brightnessFollowSwitch.state == .on
         if isBrightnessFollowEnabled, lamp.isAutoLightEnabled == true {
-            _ = lamp.setAutoLight(enabled: false)
-            autoLightSwitch.state = .off
-            log("Studio Display 亮度跟随已开启，同时关闭灯具自动感光")
+            isBrightnessFollowEnabled = false
+            brightnessFollowSwitch.state = .off
+            log("灯具自动感光仍在运行，请先用灯体按键关闭后再开启亮度跟随")
         }
         UserDefaults.standard.set(isBrightnessFollowEnabled, forKey: "brightnessFollowEnabled")
         update(isAsleep: isAsleep, healthy: isHealthy)
@@ -121,6 +148,8 @@ private final class StatusIndicator: NSObject {
     private func configurePanel() {
         powerSwitch.setButtonType(.switch)
         autoLightSwitch.setButtonType(.switch)
+        presenceSwitch.setButtonType(.switch)
+        videoModeSwitch.setButtonType(.switch)
         brightnessFollowSwitch.setButtonType(.switch)
         powerSwitch.target = self
         powerSwitch.action = #selector(powerChanged)
@@ -130,8 +159,15 @@ private final class StatusIndicator: NSObject {
         temperatureSlider.target = self
         temperatureSlider.action = #selector(temperatureChanged)
         temperatureSlider.isContinuous = false
-        autoLightSwitch.target = self
-        autoLightSwitch.action = #selector(autoLightChanged)
+        autoLightSwitch.isEnabled = false
+        autoLightSwitch.toolTip = "当前仅显示灯具状态；控制协议尚未完成验证"
+        presenceSwitch.target = self
+        presenceSwitch.action = #selector(presenceChanged)
+        videoModeSwitch.target = self
+        videoModeSwitch.action = #selector(videoModeChanged)
+        presetPopup.addItems(withTitles: ["自定义", "专注办公", "夜间工作", "视频会议"])
+        presetPopup.target = self
+        presetPopup.action = #selector(presetChanged)
         brightnessFollowSwitch.target = self
         brightnessFollowSwitch.action = #selector(brightnessFollowChanged)
 
@@ -141,8 +177,12 @@ private final class StatusIndicator: NSObject {
         let temperatureRow = controlRow(title: "色温", slider: temperatureSlider, valueLabel: temperatureValueLabel)
         let divider = NSBox()
         divider.boxType = .separator
+        let presetRow = NSStackView(views: [NSTextField(labelWithString: "模式预设"), presetPopup])
+        presetRow.orientation = .horizontal
+        presetRow.alignment = .centerY
+        presetRow.spacing = 12
 
-        let stack = NSStackView(views: [title, powerSwitch, brightnessRow, temperatureRow, autoLightSwitch, divider, brightnessFollowSwitch])
+        let stack = NSStackView(views: [title, powerSwitch, brightnessRow, temperatureRow, autoLightSwitch, presenceSwitch, videoModeSwitch, presetRow, divider, brightnessFollowSwitch])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -152,7 +192,7 @@ private final class StatusIndicator: NSObject {
         temperatureRow.widthAnchor.constraint(equalToConstant: 288).isActive = true
 
         let controller = NSViewController()
-        controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 250))
+        controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 350))
         controller.view.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor),
@@ -161,7 +201,7 @@ private final class StatusIndicator: NSObject {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: controller.view.bottomAnchor)
         ])
         popover.contentViewController = controller
-        popover.contentSize = NSSize(width: 320, height: 250)
+        popover.contentSize = NSSize(width: 320, height: 350)
         popover.behavior = .transient
     }
 
@@ -181,6 +221,8 @@ private final class StatusIndicator: NSObject {
     private func refreshControls() {
         powerSwitch.state = lamp.isPowerOn == true ? .on : .off
         autoLightSwitch.state = lamp.isAutoLightEnabled == true ? .on : .off
+        presenceSwitch.state = lamp.isPresenceDetectionEnabled == true ? .on : .off
+        videoModeSwitch.state = lamp.isVideoModeEnabled == true ? .on : .off
         brightnessFollowSwitch.state = isBrightnessFollowEnabled ? .on : .off
         if let brightness = lamp.currentBrightness {
             brightnessSlider.doubleValue = Double(brightness)
@@ -194,7 +236,8 @@ private final class StatusIndicator: NSObject {
         powerSwitch.isEnabled = enabled
         brightnessSlider.isEnabled = enabled
         temperatureSlider.isEnabled = enabled
-        autoLightSwitch.isEnabled = enabled
+        presenceSwitch.isEnabled = enabled
+        videoModeSwitch.isEnabled = enabled
     }
 
     private func updateIcon(healthy: Bool) {
@@ -218,6 +261,8 @@ private final class LampController {
     private(set) var currentTemperature: Int?
     private(set) var isPowerOn: Bool?
     private(set) var isAutoLightEnabled: Bool?
+    private(set) var isPresenceDetectionEnabled: Bool?
+    private(set) var isVideoModeEnabled: Bool?
     private(set) var statusRevision = 0
 
     var isConnected: Bool { device != nil }
@@ -278,10 +323,17 @@ private final class LampController {
         return true
     }
 
-    func setAutoLight(enabled: Bool) -> Bool {
+    func setPresenceDetection(enabled: Bool) -> Bool {
         guard sendCommand(0x06, payload: [enabled ? 1 : 0]) else { return false }
-        isAutoLightEnabled = enabled
-        log(enabled ? "已开启灯具自动感光" : "已关闭灯具自动感光")
+        isPresenceDetectionEnabled = enabled
+        log(enabled ? "已开启入座检测" : "已关闭入座检测")
+        return true
+    }
+
+    func setVideoMode(enabled: Bool) -> Bool {
+        guard sendCommand(0x09, payload: [enabled ? 1 : 0]) else { return false }
+        isVideoModeEnabled = enabled
+        log(enabled ? "已开启视频模式" : "已关闭视频模式")
         return true
     }
 
@@ -351,7 +403,9 @@ private final class LampController {
                     if controller.isPowerOn == nil {
                         controller.isPowerOn = (report[6] & 0x10) != 0
                     }
-                    controller.isAutoLightEnabled = (report[6] & 0x20) != 0
+                    controller.isAutoLightEnabled = (report[6] & 0x04) != 0
+                    controller.isPresenceDetectionEnabled = (report[6] & 0x20) != 0
+                    controller.isVideoModeEnabled = (report[6] & 0x80) != 0
                     controller.currentTemperature = (Int(report[8]) << 8) | Int(report[9])
                     controller.currentBrightness = Int(report[10])
                     controller.statusRevision += 1
@@ -491,13 +545,15 @@ private func pollDisplayAndLamp() {
            lamp.statusRevision > anchorRevision,
            let lampBrightness = lamp.currentBrightness {
             if lamp.isAutoLightEnabled == true {
-                _ = lamp.setAutoLight(enabled: false)
-                log("Studio Display 亮度跟随生效，同时关闭灯具自动感光")
+                log("检测到灯具自动感光仍在运行；亮度跟随将在关闭自动感光后生效")
+                brightnessOffset = nil
+                lastDisplayBrightness = displayBrightness
+            } else {
+                brightnessOffset = lampBrightness - displayBrightness
+                lastDisplayBrightness = displayBrightness
+                log("已锁定亮度差：iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%")
             }
-            brightnessOffset = lampBrightness - displayBrightness
-            lastDisplayBrightness = displayBrightness
             anchorStatusRevision = nil
-            log("已锁定亮度差：iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%")
         } else if let brightnessOffset, displayBrightness != lastDisplayBrightness {
             let target = max(1, min(100, displayBrightness + brightnessOffset))
             if lamp.setBrightness(target) {

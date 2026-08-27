@@ -17,7 +17,11 @@ app, the lamp firmware, or macOS.
 
 - Studio Display sleeps -> iScreenBar turns off.
 - Studio Display wakes -> iScreenBar turns on.
-- Menu-bar control panel for lamp power, brightness, color temperature, and automatic ambient-light adjustment.
+- Menu-bar control panel for lamp power, brightness, color temperature,
+  presence detection, and video mode.
+- Built-in presets for focused work, night work, and video meetings.
+- Shows the lamp's automatic ambient-light status without taking control away
+  from the lamp's own sensor.
 - Optional Studio Display brightness following that preserves the current
   brightness difference between the display and lamp.
 - Menu-bar brightness icon shows the active brightness-following state.
@@ -118,8 +122,14 @@ signed locally.
   lamp-on command after the utility turned it off for display sleep.
 - Sleep/wake power synchronization is always enabled.
 - Click the menu-bar brightness icon to open the control panel.
-- Automatic ambient-light adjustment and Studio Display brightness following are mutually exclusive, so only one source controls lamp brightness at a time.
+- The automatic ambient-light switch is currently status-only because its HID
+  control command has not yet been verified. Use the lamp control to turn that
+  mode on or off.
+- Automatic ambient-light adjustment and Studio Display brightness following
+  are mutually exclusive, so only one source controls lamp brightness at a time.
 - Enabling Studio Display brightness following locks the current brightness difference; disabling it leaves the lamp at its current brightness.
+- Selecting a preset turns the lamp on, applies its brightness and color
+  temperature, sets video mode, and disables Studio Display brightness following.
 - BenQ's own automatic brightness mode uses the lamp's ambient-light sensor and is separate from this feature.
 - If the green dot disappears, the LaunchAgent is not running.
 - A USB failure changes the dot to red and writes the error to the local log.
