@@ -27,6 +27,8 @@ app, the lamp firmware, or macOS.
 - Shows and controls the lamp's automatic ambient-light state.
 - Optional Studio Display brightness following that preserves the current
   brightness difference between the display and lamp.
+- Optional bidirectional brightness lock between the MacBook built-in display
+  and Studio Display that preserves their current brightness difference.
 - Menu-bar brightness icon shows the active brightness-following state.
 - The icon turns red if the USB connection or a power command fails.
 - Detects USB removal and automatically restores synchronization after the lamp reconnects.

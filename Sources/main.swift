@@ -414,6 +414,7 @@ private final class StatusIndicator: NSObject {
     private var modeCenterWindow: NSWindow?
     private let bindAppButton = NSButton(title: "绑定应用", target: nil, action: nil)
     private let brightnessFollowSwitch = FeatureButton(title: "亮度跟随", symbol: "display", accentColor: activeControlColor)
+    private let displayBrightnessLockSwitch = FeatureButton(title: "双屏亮度", symbol: "rectangle.on.rectangle", accentColor: activeControlColor)
     private let powerSyncSwitch = FeatureButton(title: "熄屏同步", symbol: "moon.zzz", accentColor: activeControlColor)
     private let captureBrightButton = FeatureButton(title: "明亮关灯", symbol: "sun.max.fill", accentColor: .systemOrange)
     private let captureDarkButton = FeatureButton(title: "昏暗开灯", symbol: "moon.fill", accentColor: .systemBlue)
@@ -430,6 +431,7 @@ private final class StatusIndicator: NSObject {
     private let displayAutoPresetSwitch = AccentSwitch()
     private let displayController = DisplayController()
     private(set) var isBrightnessFollowEnabled: Bool
+    private(set) var isDisplayBrightnessLockEnabled: Bool
     private(set) var isPowerSyncEnabled: Bool
     private(set) var isTimeTemperatureEnabled: Bool
     private(set) var ambientCloseThreshold: Int?
@@ -461,6 +463,7 @@ private final class StatusIndicator: NSObject {
         self.lamp = lamp
         self.isAsleep = isAsleep
         isBrightnessFollowEnabled = UserDefaults.standard.bool(forKey: "brightnessFollowEnabled")
+        isDisplayBrightnessLockEnabled = UserDefaults.standard.bool(forKey: "displayBrightnessLockEnabled")
         isPowerSyncEnabled = UserDefaults.standard.object(forKey: "powerSyncEnabled") as? Bool ?? true
         isTimeTemperatureEnabled = UserDefaults.standard.bool(forKey: "timeTemperatureEnabled")
         ambientCloseThreshold = UserDefaults.standard.object(forKey: "ambientCloseThreshold") as? Int
@@ -1057,6 +1060,15 @@ private final class StatusIndicator: NSObject {
         log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
     }
 
+    @objc private func displayBrightnessLockChanged() {
+        isDisplayBrightnessLockEnabled = displayBrightnessLockSwitch.state == .on
+        UserDefaults.standard.set(isDisplayBrightnessLockEnabled, forKey: "displayBrightnessLockEnabled")
+        log(isDisplayBrightnessLockEnabled
+            ? "已开启 MacBook 与 Studio Display 双屏亮度锁定"
+            : "已关闭 MacBook 与 Studio Display 双屏亮度锁定")
+        refreshControls()
+    }
+
     @objc private func powerSyncChanged() {
         isPowerSyncEnabled = powerSyncSwitch.state == .on
         UserDefaults.standard.set(isPowerSyncEnabled, forKey: "powerSyncEnabled")
@@ -1314,6 +1326,9 @@ private final class StatusIndicator: NSObject {
         bindAppButton.action = #selector(bindCurrentModeToApp)
         brightnessFollowSwitch.target = self
         brightnessFollowSwitch.action = #selector(brightnessFollowChanged)
+        displayBrightnessLockSwitch.target = self
+        displayBrightnessLockSwitch.action = #selector(displayBrightnessLockChanged)
+        displayBrightnessLockSwitch.toolTip = "锁定 MacBook 内屏与 Studio Display 当前亮度差，调节任意一块时双向跟随"
         powerSyncSwitch.target = self
         powerSyncSwitch.action = #selector(powerSyncChanged)
         captureBrightButton.target = self
@@ -1382,12 +1397,12 @@ private final class StatusIndicator: NSObject {
         let featureGrid = NSGridView(views: [
             [powerSwitch, autoLightSwitch, presenceSwitch],
             [videoModeSwitch, brightnessFollowSwitch, powerSyncSwitch],
-            [timeTemperatureSwitch, NSView(), NSView()]
+            [timeTemperatureSwitch, displayBrightnessLockSwitch, NSView()]
         ])
         featureGrid.rowSpacing = 6
         featureGrid.columnSpacing = 6
         featureGrid.xPlacement = .fill
-        for button in [powerSwitch, autoLightSwitch, presenceSwitch, videoModeSwitch, brightnessFollowSwitch, powerSyncSwitch, timeTemperatureSwitch] {
+        for button in [powerSwitch, autoLightSwitch, presenceSwitch, videoModeSwitch, brightnessFollowSwitch, powerSyncSwitch, timeTemperatureSwitch, displayBrightnessLockSwitch] {
             button.widthAnchor.constraint(equalToConstant: 100).isActive = true
             button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         }
@@ -1605,6 +1620,8 @@ private final class StatusIndicator: NSObject {
         }
         videoModeSwitch.state = lamp.isVideoModeEnabled == true ? .on : .off
         brightnessFollowSwitch.state = isBrightnessFollowEnabled ? .on : .off
+        displayBrightnessLockSwitch.state = isDisplayBrightnessLockEnabled ? .on : .off
+        displayBrightnessLockSwitch.isEnabled = displayControlsAllowed && studioDisplayID() != nil && activeBuiltinDisplayID() != nil
         powerSyncSwitch.state = isPowerSyncEnabled ? .on : .off
         timeTemperatureSwitch.state = isTimeTemperatureEnabled ? .on : .off
         updateAmbientStatusLabel()
@@ -1922,8 +1939,10 @@ private final class LampController {
 
 private final class DisplayBrightnessReader {
     private typealias GetBrightness = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+    private typealias SetBrightness = @convention(c) (CGDirectDisplayID, Float) -> Int32
     private let handle: UnsafeMutableRawPointer?
     private let getter: GetBrightness?
+    private let setter: SetBrightness?
 
     init() {
         handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY)
@@ -1931,6 +1950,11 @@ private final class DisplayBrightnessReader {
             getter = unsafeBitCast(symbol, to: GetBrightness.self)
         } else {
             getter = nil
+        }
+        if let handle, let symbol = dlsym(handle, "DisplayServicesSetBrightness") {
+            setter = unsafeBitCast(symbol, to: SetBrightness.self)
+        } else {
+            setter = nil
         }
     }
 
@@ -1943,6 +1967,12 @@ private final class DisplayBrightnessReader {
         var value: Float = 0
         guard getter(displayID, &value) == 0 else { return nil }
         return Int((max(0, min(1, value)) * 100).rounded())
+    }
+
+    func setPercent(_ percent: Int, for displayID: CGDirectDisplayID) -> Bool {
+        guard let setter else { return false }
+        let value = Float(max(0, min(100, percent))) / 100
+        return setter(displayID, value) == 0
     }
 }
 
@@ -2042,6 +2072,16 @@ private func studioDisplayID() -> CGDirectDisplayID? {
         .max { CGDisplayPixelsWide($0) < CGDisplayPixelsWide($1) }
 }
 
+private func activeBuiltinDisplayID() -> CGDirectDisplayID? {
+    var count: UInt32 = 0
+    guard CGGetOnlineDisplayList(0, nil, &count) == .success else { return nil }
+    var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+    guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return nil }
+    return displays.prefix(Int(count)).first {
+        CGDisplayIsBuiltin($0) != 0 && CGDisplayIsOnline($0) != 0 && CGDisplayIsActive($0) != 0
+    }
+}
+
 private func isConsoleSessionLocked() -> Bool {
     guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
     return session["CGSSessionScreenIsLocked"] as? Bool ?? false
@@ -2077,12 +2117,17 @@ private func setAmbientLampLock(_ active: Bool) {
 private let statusIndicator = StatusIndicator(isAsleep: wasAsleep, lamp: lamp)
 statusIndicator.handleStudioDisplayConnection(connected: displayID != nil)
 var wasBrightnessFollowEnabled = statusIndicator.isBrightnessFollowEnabled
+var wasDisplayBrightnessLockEnabled = statusIndicator.isDisplayBrightnessLockEnabled
 var wasPowerSyncEnabled = statusIndicator.isPowerSyncEnabled
 var wasAmbientLinkEnabled = statusIndicator.isAmbientLinkEnabled
 var wasAmbientCloseThreshold = statusIndicator.ambientCloseThreshold
 var brightnessOffset: Int?
 var anchorStatusRevision: Int?
 var lastDisplayBrightness: Int?
+var displayBrightnessOffset: Int?
+var lastBuiltinDisplayBrightness: Int?
+var lastStudioDisplayBrightnessForLock: Int?
+var displayBrightnessWriteSuppressedUntil = Date.distantPast
 var lastStatusRequest = Date.distantPast
 var wasLampConnected = lamp.isConnected
 if !wasAmbientLinkEnabled, ambientTurnedLampOff || statusIndicator.hasPendingAmbientPresenceRestore {
@@ -2104,6 +2149,8 @@ private func pollDisplayAndLamp() {
         displayID = detectedDisplayID
         brightnessOffset = nil
         lastDisplayBrightness = nil
+        lastBuiltinDisplayBrightness = nil
+        lastStudioDisplayBrightnessForLock = nil
         anchorStatusRevision = nil
         if let displayID {
             wasAsleep = CGDisplayIsAsleep(displayID) != 0
@@ -2116,6 +2163,7 @@ private func pollDisplayAndLamp() {
     }
     let isAsleep = displayID.map { CGDisplayIsAsleep($0) != 0 } ?? false
     let brightnessFollowEnabled = statusIndicator.isBrightnessFollowEnabled
+    let displayBrightnessLockEnabled = statusIndicator.isDisplayBrightnessLockEnabled
     let powerSyncEnabled = statusIndicator.isPowerSyncEnabled
     let ambientLinkEnabled = statusIndicator.isAmbientLinkEnabled
     let ambientCloseThreshold = statusIndicator.ambientCloseThreshold
@@ -2263,6 +2311,14 @@ private func pollDisplayAndLamp() {
         statusIndicator.update(isAsleep: isAsleep, healthy: true)
     }
 
+    if displayBrightnessLockEnabled != wasDisplayBrightnessLockEnabled {
+        displayBrightnessOffset = nil
+        lastBuiltinDisplayBrightness = nil
+        lastStudioDisplayBrightnessForLock = nil
+        displayBrightnessWriteSuppressedUntil = Date.distantPast
+        wasDisplayBrightnessLockEnabled = displayBrightnessLockEnabled
+    }
+
     if isAsleep != wasAsleep {
         if isAsleep {
             log("检测到 Studio Display 熄屏")
@@ -2287,6 +2343,52 @@ private func pollDisplayAndLamp() {
     }
 
     statusIndicator.applyScheduledTemperatureIfNeeded(isAsleep: isAsleep)
+
+    if displayBrightnessLockEnabled,
+       !isAsleep,
+       !isConsoleSessionLocked(),
+       let studioID = displayID,
+       let builtinID = activeBuiltinDisplayID(),
+       let studioBrightness = displayBrightnessReader.percent(for: studioID),
+       let builtinBrightness = displayBrightnessReader.percent(for: builtinID) {
+        if displayBrightnessOffset == nil || lastBuiltinDisplayBrightness == nil || lastStudioDisplayBrightnessForLock == nil {
+            let isNewLock = displayBrightnessOffset == nil
+            if isNewLock {
+                displayBrightnessOffset = builtinBrightness - studioBrightness
+            }
+            lastBuiltinDisplayBrightness = builtinBrightness
+            lastStudioDisplayBrightnessForLock = studioBrightness
+            if isNewLock {
+                log("已锁定双屏亮度差：MacBook \(builtinBrightness)% / Studio Display \(studioBrightness)%")
+            }
+        } else if Date() >= displayBrightnessWriteSuppressedUntil,
+                  let offset = displayBrightnessOffset,
+                  let previousBuiltin = lastBuiltinDisplayBrightness,
+                  let previousStudio = lastStudioDisplayBrightnessForLock {
+            let builtinDelta = builtinBrightness - previousBuiltin
+            let studioDelta = studioBrightness - previousStudio
+            if builtinDelta != 0 || studioDelta != 0 {
+                if abs(builtinDelta) > abs(studioDelta) {
+                    let targetStudio = max(0, min(100, builtinBrightness - offset))
+                    if targetStudio == studioBrightness || displayBrightnessReader.setPercent(targetStudio, for: studioID) {
+                        lastBuiltinDisplayBrightness = builtinBrightness
+                        lastStudioDisplayBrightnessForLock = targetStudio
+                        displayBrightnessWriteSuppressedUntil = Date().addingTimeInterval(0.6)
+                    }
+                } else {
+                    let targetBuiltin = max(0, min(100, studioBrightness + offset))
+                    if targetBuiltin == builtinBrightness || displayBrightnessReader.setPercent(targetBuiltin, for: builtinID) {
+                        lastBuiltinDisplayBrightness = targetBuiltin
+                        lastStudioDisplayBrightnessForLock = studioBrightness
+                        displayBrightnessWriteSuppressedUntil = Date().addingTimeInterval(0.6)
+                    }
+                }
+            }
+        }
+    } else {
+        lastBuiltinDisplayBrightness = nil
+        lastStudioDisplayBrightnessForLock = nil
+    }
 
     if brightnessFollowEnabled, !isAsleep, let displayID,
        let displayBrightness = displayBrightnessReader.percent(for: displayID) {
