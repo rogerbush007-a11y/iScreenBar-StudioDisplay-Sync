@@ -15,6 +15,8 @@ app, the lamp firmware, or macOS.
 
 ## Features
 
+See the complete Chinese feature inventory: [docs/FEATURES.zh-CN.md](docs/FEATURES.zh-CN.md).
+
 - Studio Display sleeps -> iScreenBar turns off.
 - Studio Display wakes -> iScreenBar turns on.
 - Menu-bar control panel for lamp power, brightness, color temperature,
