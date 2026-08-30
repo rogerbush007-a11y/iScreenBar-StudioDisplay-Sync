@@ -18,10 +18,13 @@ app, the lamp firmware, or macOS.
 - Studio Display sleeps -> iScreenBar turns off.
 - Studio Display wakes -> iScreenBar turns on.
 - Menu-bar control panel for lamp power, brightness, color temperature,
-  presence detection, and video mode.
+  presence detection (including delay setting), and video mode.
 - Built-in presets for focused work, night work, and video meetings.
-- Shows the lamp's automatic ambient-light status without taking control away
-  from the lamp's own sensor.
+- Native MacBook built-in display rotation and physical on/off controls in the same menu panel.
+- Separate lighting presets and rotation presets with matching iScreenBar UI styling.
+- Rotation presets can remember the built-in display power state, angle, and primary-display role.
+- Optional automatic rotation preset on Studio Display connection, with restoration of the prior state when disabled or disconnected.
+- Shows and controls the lamp's automatic ambient-light state.
 - Optional Studio Display brightness following that preserves the current
   brightness difference between the display and lamp.
 - Menu-bar brightness icon shows the active brightness-following state.
@@ -122,11 +125,21 @@ signed locally.
   lamp-on command after the utility turned it off for display sleep.
 - Sleep/wake power synchronization is always enabled.
 - Click the menu-bar brightness icon to open the control panel.
-- The automatic ambient-light switch is currently status-only because its HID
-  control command has not yet been verified. Use the lamp control to turn that
-  mode on or off.
+- Automatic ambient light can be switched on or off from the control panel.
+  Enabling uses the official auto-light report; disabling restores the current
+  manual brightness because the lamp firmware handles the two transitions
+  differently.
+- On the tested iScreenBar firmware, the lamp's physical auto-light key enters
+  or recalibrates automatic mode but does not reliably exit it. Use the control
+  panel to turn automatic ambient light off.
 - Automatic ambient-light adjustment and Studio Display brightness following
   are mutually exclusive, so only one source controls lamp brightness at a time.
+- Optional time-based color temperature moves smoothly from warm light at night
+  to cooler light during the day in 50 K steps, with at most one lamp update per
+  minute; disabling it keeps the current manual value.
+- Presence detection follows the official 3/5/10-minute choices and includes
+  low/medium/high sensitivity in the control panel,
+  which is sent to the lamp when supported.
 - Enabling Studio Display brightness following locks the current brightness difference; disabling it leaves the lamp at its current brightness.
 - Selecting a preset turns the lamp on, applies its brightness and color
   temperature, sets video mode, and disables Studio Display brightness following.
