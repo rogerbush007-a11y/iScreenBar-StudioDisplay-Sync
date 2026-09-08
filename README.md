@@ -24,6 +24,7 @@ app, the lamp firmware, or macOS.
 - The icon turns red if the USB connection or a power command fails.
 - Detects USB removal and automatically restores synchronization after the lamp reconnects.
 - Hover text shows the current display/synchronization state.
+- Menu-bar panel and log follow the system language: Simplified Chinese, Traditional Chinese, or English for other languages.
 - Starts automatically after login using a per-user LaunchAgent.
 - No network access, analytics, cloud service, or account requirement.
 - Recoverable uninstaller moves installed files to Trash.

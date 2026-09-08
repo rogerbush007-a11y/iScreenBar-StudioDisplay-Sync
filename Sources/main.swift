@@ -14,17 +14,40 @@ private func log(_ message: String) {
     fflush(stdout)
 }
 
+private enum InterfaceLanguage {
+    case simplifiedChinese
+    case traditionalChinese
+    case english
+
+    /// Picks the interface language from the user's first preferred system language.
+    static let current: InterfaceLanguage = {
+        guard let identifier = Locale.preferredLanguages.first else { return .english }
+        let language = Locale.Language(identifier: identifier)
+        guard language.languageCode?.identifier == "zh" else { return .english }
+        return language.maximalIdentifier.contains("Hant") ? .traditionalChinese : .simplifiedChinese
+    }()
+}
+
+/// Returns the string matching the current interface language.
+private func L(_ simplified: String, _ traditional: String, _ english: String) -> String {
+    switch InterfaceLanguage.current {
+    case .simplifiedChinese: return simplified
+    case .traditionalChinese: return traditional
+    case .english: return english
+    }
+}
+
 private final class StatusIndicator: NSObject {
     private let item: NSStatusItem
     private let lamp: LampController
     private let popover = NSPopover()
-    private let powerSwitch = NSButton(checkboxWithTitle: "开灯", target: nil, action: nil)
+    private let powerSwitch = NSButton(checkboxWithTitle: L("开灯", "開燈", "Lamp On"), target: nil, action: nil)
     private let brightnessSlider = NSSlider(value: 50, minValue: 1, maxValue: 100, target: nil, action: nil)
     private let brightnessValueLabel = NSTextField(labelWithString: "50%")
     private let temperatureSlider = NSSlider(value: 5000, minValue: 2700, maxValue: 6500, target: nil, action: nil)
     private let temperatureValueLabel = NSTextField(labelWithString: "5000K")
-    private let autoLightSwitch = NSButton(checkboxWithTitle: "自动感光", target: nil, action: nil)
-    private let brightnessFollowSwitch = NSButton(checkboxWithTitle: "跟随 Studio Display 亮度", target: nil, action: nil)
+    private let autoLightSwitch = NSButton(checkboxWithTitle: L("自动感光", "自動感光", "Auto Ambient Light"), target: nil, action: nil)
+    private let brightnessFollowSwitch = NSButton(checkboxWithTitle: L("跟随 Studio Display 亮度", "跟隨 Studio Display 亮度", "Follow Studio Display Brightness"), target: nil, action: nil)
     private(set) var isBrightnessFollowEnabled: Bool
     private var isHealthy = true
     private var isAsleep: Bool
@@ -50,10 +73,14 @@ private final class StatusIndicator: NSObject {
         self.isAsleep = isAsleep
         isHealthy = healthy
         updateIcon(healthy: healthy)
-        let displayState = isAsleep ? "Studio Display 已熄屏" : "Studio Display 已唤醒"
-        let brightnessStatus = isBrightnessFollowEnabled ? "亮度跟随已开启" : "亮度跟随已关闭"
-        let status = healthy ? "同步正常" : "同步异常"
-        item.button?.toolTip = "iScreenBar：\(status) · \(displayState) · \(brightnessStatus)"
+        let displayState = isAsleep
+            ? L("Studio Display 已熄屏", "Studio Display 已休眠", "Studio Display asleep")
+            : L("Studio Display 已唤醒", "Studio Display 已喚醒", "Studio Display awake")
+        let brightnessStatus = isBrightnessFollowEnabled
+            ? L("亮度跟随已开启", "亮度跟隨已開啟", "brightness following on")
+            : L("亮度跟随已关闭", "亮度跟隨已關閉", "brightness following off")
+        let status = healthy ? L("同步正常", "同步正常", "sync healthy") : L("同步异常", "同步異常", "sync failed")
+        item.button?.toolTip = L("iScreenBar：", "iScreenBar：", "iScreenBar: ") + "\(status) · \(displayState) · \(brightnessStatus)"
         item.button?.setAccessibilityLabel("iScreenBar \(status)")
         if popover.isShown { refreshControls() }
     }
@@ -98,7 +125,7 @@ private final class StatusIndicator: NSObject {
                 brightnessFollowSwitch.state = .off
                 UserDefaults.standard.set(false, forKey: "brightnessFollowEnabled")
                 update(isAsleep: isAsleep, healthy: isHealthy)
-                log("自动感光已开启，同时关闭 Studio Display 亮度跟随")
+                log(L("自动感光已开启，同时关闭 Studio Display 亮度跟随", "自動感光已開啟，同時關閉 Studio Display 亮度跟隨", "Auto ambient light enabled; Studio Display brightness following disabled"))
             }
         } else {
             autoLightSwitch.state = requested ? .off : .on
@@ -111,11 +138,13 @@ private final class StatusIndicator: NSObject {
         if isBrightnessFollowEnabled, lamp.isAutoLightEnabled == true {
             _ = lamp.setAutoLight(enabled: false)
             autoLightSwitch.state = .off
-            log("Studio Display 亮度跟随已开启，同时关闭灯具自动感光")
+            log(L("Studio Display 亮度跟随已开启，同时关闭灯具自动感光", "Studio Display 亮度跟隨已開啟，同時關閉燈具自動感光", "Studio Display brightness following enabled; lamp auto ambient light disabled"))
         }
         UserDefaults.standard.set(isBrightnessFollowEnabled, forKey: "brightnessFollowEnabled")
         update(isAsleep: isAsleep, healthy: isHealthy)
-        log(isBrightnessFollowEnabled ? "已开启 Studio Display 亮度跟随" : "已关闭 Studio Display 亮度跟随")
+        log(isBrightnessFollowEnabled
+            ? L("已开启 Studio Display 亮度跟随", "已開啟 Studio Display 亮度跟隨", "Studio Display brightness following enabled")
+            : L("已关闭 Studio Display 亮度跟随", "已關閉 Studio Display 亮度跟隨", "Studio Display brightness following disabled"))
     }
 
     private func configurePanel() {
@@ -135,10 +164,10 @@ private final class StatusIndicator: NSObject {
         brightnessFollowSwitch.target = self
         brightnessFollowSwitch.action = #selector(brightnessFollowChanged)
 
-        let title = NSTextField(labelWithString: "iScreenBar 控制")
+        let title = NSTextField(labelWithString: L("iScreenBar 控制", "iScreenBar 控制", "iScreenBar Controls"))
         title.font = .boldSystemFont(ofSize: 15)
-        let brightnessRow = controlRow(title: "亮度", slider: brightnessSlider, valueLabel: brightnessValueLabel)
-        let temperatureRow = controlRow(title: "色温", slider: temperatureSlider, valueLabel: temperatureValueLabel)
+        let brightnessRow = controlRow(title: L("亮度", "亮度", "Brightness"), slider: brightnessSlider, valueLabel: brightnessValueLabel)
+        let temperatureRow = controlRow(title: L("色温", "色溫", "Color Temp"), slider: temperatureSlider, valueLabel: temperatureValueLabel)
         let divider = NSBox()
         divider.boxType = .separator
 
@@ -167,8 +196,9 @@ private final class StatusIndicator: NSObject {
 
     private func controlRow(title: String, slider: NSSlider, valueLabel: NSTextField) -> NSStackView {
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.widthAnchor.constraint(equalToConstant: 34).isActive = true
-        slider.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        let titleWidth: CGFloat = InterfaceLanguage.current == .english ? 78 : 34
+        titleLabel.widthAnchor.constraint(equalToConstant: titleWidth).isActive = true
+        slider.widthAnchor.constraint(equalToConstant: 214 - titleWidth).isActive = true
         valueLabel.alignment = .right
         valueLabel.widthAnchor.constraint(equalToConstant: 58).isActive = true
         let row = NSStackView(views: [titleLabel, slider, valueLabel])
@@ -202,7 +232,7 @@ private final class StatusIndicator: NSObject {
             ? (isBrightnessFollowEnabled ? .systemYellow : .secondaryLabelColor)
             : .systemRed
         let configuration = NSImage.SymbolConfiguration(paletteColors: [color])
-        let symbol = NSImage(systemSymbolName: "sun.min.fill", accessibilityDescription: "亮度同步")?
+        let symbol = NSImage(systemSymbolName: "sun.min.fill", accessibilityDescription: L("亮度同步", "亮度同步", "Brightness sync"))?
             .withSymbolConfiguration(configuration)
         symbol?.isTemplate = false
         item.button?.image = symbol
@@ -225,11 +255,11 @@ private final class LampController {
     init() {
         manager = Self.makeManager()
         guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else {
-            log("无法打开 iScreenBar USB HID 设备")
+            log(L("无法打开 iScreenBar USB HID 设备", "無法開啟 iScreenBar USB HID 裝置", "Failed to open iScreenBar USB HID device"))
             return
         }
         guard attachFirstDevice() else {
-            log("未检测到 iScreenBar USB HID 设备，等待重新连接")
+            log(L("未检测到 iScreenBar USB HID 设备，等待重新连接", "未偵測到 iScreenBar USB HID 裝置，等待重新連接", "iScreenBar USB HID device not found; waiting for reconnection"))
             return
         }
         _ = requestStatus()
@@ -246,18 +276,20 @@ private final class LampController {
     func setPower(on: Bool) -> Bool {
         if sendPowerReport(on: on) {
             isPowerOn = on
-            log("灯已\(on ? "开启" : "关闭")")
+            log(on ? L("灯已开启", "燈已開啟", "Lamp turned on") : L("灯已关闭", "燈已關閉", "Lamp turned off"))
             return true
         }
 
-        log("USB HID 连接已失效，正在重新连接")
+        log(L("USB HID 连接已失效，正在重新连接", "USB HID 連線已失效，正在重新連接", "USB HID connection lost; reconnecting"))
         guard reconnect(), sendPowerReport(on: on) else {
-            log("USB HID 重连后指令仍失败")
+            log(L("USB HID 重连后指令仍失败", "USB HID 重新連接後指令仍失敗", "Command still failed after USB HID reconnection"))
             return false
         }
 
         isPowerOn = on
-        log("重连成功，灯已\(on ? "开启" : "关闭")")
+        log(on
+            ? L("重连成功，灯已开启", "重新連接成功，燈已開啟", "Reconnected; lamp turned on")
+            : L("重连成功，灯已关闭", "重新連接成功，燈已關閉", "Reconnected; lamp turned off"))
         return true
     }
 
@@ -265,7 +297,7 @@ private final class LampController {
         let value = UInt8(clamping: max(1, min(100, brightness)))
         guard sendCommand(0x04, payload: [value, value]) else { return false }
         currentBrightness = Int(value)
-        log("灯亮度已调整为 \(brightness)%")
+        log(L("灯亮度已调整为 \(brightness)%", "燈亮度已調整為 \(brightness)%", "Lamp brightness set to \(brightness)%"))
         return true
     }
 
@@ -274,14 +306,16 @@ private final class LampController {
         let payload = [UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF)]
         guard sendCommand(0x03, payload: payload) else { return false }
         currentTemperature = value
-        log("灯色温已调整为 \(value)K")
+        log(L("灯色温已调整为 \(value)K", "燈色溫已調整為 \(value)K", "Lamp color temperature set to \(value)K"))
         return true
     }
 
     func setAutoLight(enabled: Bool) -> Bool {
         guard sendCommand(0x06, payload: [enabled ? 1 : 0]) else { return false }
         isAutoLightEnabled = enabled
-        log(enabled ? "已开启灯具自动感光" : "已关闭灯具自动感光")
+        log(enabled
+            ? L("已开启灯具自动感光", "已開啟燈具自動感光", "Lamp auto ambient light enabled")
+            : L("已关闭灯具自动感光", "已關閉燈具自動感光", "Lamp auto ambient light disabled"))
         return true
     }
 
@@ -299,7 +333,7 @@ private final class LampController {
     func checkConnection() -> Bool {
         if requestStatus() { return true }
         guard reconnect(), requestStatus() else { return false }
-        log("USB HID 已重新连接")
+        log(L("USB HID 已重新连接", "USB HID 已重新連接", "USB HID reconnected"))
         return true
     }
 
@@ -334,7 +368,7 @@ private final class LampController {
                                  bytes.bindMemory(to: UInt8.self).baseAddress!, report.count)
         }
         if result != kIOReturnSuccess {
-            log(String(format: "USB HID 指令失败：0x%08X", result))
+            log(String(format: L("USB HID 指令失败：0x%08X", "USB HID 指令失敗：0x%08X", "USB HID command failed: 0x%08X"), result))
         }
         return result == kIOReturnSuccess
     }
@@ -428,13 +462,15 @@ private func studioDisplayID() -> CGDirectDisplayID? {
 }
 
 guard let displayID = studioDisplayID() else {
-    log("未找到外接显示器")
+    log(L("未找到外接显示器", "未找到外接顯示器", "No external display found"))
     exit(2)
 }
 private let lamp = LampController()
 private let displayBrightnessReader = DisplayBrightnessReader()
 
-log("开始监听 Studio Display ID=\(displayID)，分辨率=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))")
+log(L("开始监听 Studio Display ID=\(displayID)，分辨率=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))",
+      "開始監聽 Studio Display ID=\(displayID)，解析度=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))",
+      "Monitoring Studio Display ID=\(displayID), resolution=\(CGDisplayPixelsWide(displayID))x\(CGDisplayPixelsHigh(displayID))"))
 var wasAsleep = CGDisplayIsAsleep(displayID) != 0
 var helperTurnedLampOff = false
 private let statusIndicator = StatusIndicator(isAsleep: wasAsleep, lamp: lamp)
@@ -447,7 +483,7 @@ var wasLampConnected = lamp.isConnected
 if wasBrightnessFollowEnabled {
     anchorStatusRevision = lamp.statusRevision
     lamp.requestStatus()
-    log("Studio Display 亮度跟随已开启，正在锁定当前亮度差")
+    log(L("Studio Display 亮度跟随已开启，正在锁定当前亮度差", "Studio Display 亮度跟隨已開啟，正在鎖定目前亮度差", "Studio Display brightness following enabled; locking current brightness offset"))
 }
 
 private func pollDisplayAndLamp() {
@@ -469,11 +505,11 @@ private func pollDisplayAndLamp() {
 
     if isAsleep != wasAsleep {
         if isAsleep {
-            log("检测到 Studio Display 熄屏")
+            log(L("检测到 Studio Display 熄屏", "偵測到 Studio Display 休眠", "Studio Display went to sleep"))
             helperTurnedLampOff = lamp.setPower(on: false)
             statusIndicator.update(isAsleep: true, healthy: helperTurnedLampOff)
         } else {
-            log("检测到 Studio Display 唤醒")
+            log(L("检测到 Studio Display 唤醒", "偵測到 Studio Display 喚醒", "Studio Display woke up"))
             if helperTurnedLampOff {
                 let restored = lamp.setPower(on: true)
                 statusIndicator.update(isAsleep: false, healthy: restored)
@@ -492,12 +528,14 @@ private func pollDisplayAndLamp() {
            let lampBrightness = lamp.currentBrightness {
             if lamp.isAutoLightEnabled == true {
                 _ = lamp.setAutoLight(enabled: false)
-                log("Studio Display 亮度跟随生效，同时关闭灯具自动感光")
+                log(L("Studio Display 亮度跟随生效，同时关闭灯具自动感光", "Studio Display 亮度跟隨生效，同時關閉燈具自動感光", "Studio Display brightness following active; lamp auto ambient light disabled"))
             }
             brightnessOffset = lampBrightness - displayBrightness
             lastDisplayBrightness = displayBrightness
             anchorStatusRevision = nil
-            log("已锁定亮度差：iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%")
+            log(L("已锁定亮度差：iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%",
+                  "已鎖定亮度差：iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%",
+                  "Brightness offset locked: iScreenBar \(lampBrightness)% / Studio Display \(displayBrightness)%"))
         } else if let brightnessOffset, displayBrightness != lastDisplayBrightness {
             let target = max(1, min(100, displayBrightness + brightnessOffset))
             if lamp.setBrightness(target) {
@@ -510,7 +548,7 @@ private func pollDisplayAndLamp() {
         let connected = lamp.checkConnection()
         if connected != wasLampConnected {
             if connected {
-                log("检测到 iScreenBar 已恢复连接，正在恢复同步状态")
+                log(L("检测到 iScreenBar 已恢复连接，正在恢复同步状态", "偵測到 iScreenBar 已恢復連接，正在恢復同步狀態", "iScreenBar reconnected; restoring synchronization state"))
                 if isAsleep {
                     helperTurnedLampOff = lamp.setPower(on: false)
                 } else {
@@ -523,7 +561,7 @@ private func pollDisplayAndLamp() {
                     lamp.requestStatus()
                 }
             } else {
-                log("检测到 iScreenBar 已断开")
+                log(L("检测到 iScreenBar 已断开", "偵測到 iScreenBar 已斷開", "iScreenBar disconnected"))
                 brightnessOffset = nil
                 anchorStatusRevision = nil
             }
