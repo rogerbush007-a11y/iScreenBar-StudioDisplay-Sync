@@ -6,8 +6,8 @@ project_dir=${script_dir:h}
 account_name=$(id -un)
 account_uid=$(id -u)
 user_home_dir=$(dscl . -read "/Users/$account_name" NFSHomeDirectory | awk '{print $2}')
-source_app="$project_dir/build/iScreenBar Studio Display Sync.app"
-installed_app="$user_home_dir/Applications/iScreenBar Studio Display Sync.app"
+source_app="$project_dir/build/iScreen Menu.app"
+installed_app="$user_home_dir/Applications/iScreen Menu.app"
 launch_agents_dir="$user_home_dir/Library/LaunchAgents"
 launch_agent="$launch_agents_dir/local.qiu.iScreenBarStudioSync.plist"
 logs_dir="$user_home_dir/Library/Logs"
@@ -41,6 +41,5 @@ escaped_log=${log_file//&/&amp;}
 plutil -lint "$launch_agent"
 launchctl bootstrap "gui/$account_uid" "$launch_agent"
 
-echo "Installed and running. A green dot should appear in the macOS menu bar."
+echo "iScreen Menu 已安装并启动，请从菜单栏打开。"
 echo "Log: $log_file"
-

@@ -1,163 +1,70 @@
-# iScreenBar Studio Display Sync
+# iScreen Menu
+**Screen and Light Controller：灯光、双屏联动与 Mac 辅助控制，集中在菜单栏。**
 
-An unofficial, local-only macOS compatibility utility that synchronizes a BenQ
-iScreenBar with Apple Studio Display sleep and wake events.
+最初是为 Studio Display 补上 iScreenBar 熄屏同步，现在加入亮度联动、环境光规则、自动色温与内屏管理。非官方独立项目，与 BenQ、Apple 无隶属关系。最新版源码继续在这个原仓库以 MIT 许可证公开。
 
-一个非官方、本地运行的 macOS 兼容工具：Apple Studio Display 熄屏时自动关闭
-BenQ iScreenBar，显示器唤醒时自动开灯。
+## 界面与功能
 
-## Why
+详见 [截图使用指南](docs/UI-GUIDE.zh-CN.md) · [完整功能清单](docs/FEATURES.zh-CN.md)。
 
-BenQ's iScreenBar is designed for supported iMac models. Its original macOS app
-does not synchronize the lamp when an Apple Studio Display sleeps independently.
-This utility fills that single compatibility gap without modifying the original
-app, the lamp firmware, or macOS.
+| 模块 | 功能 |
+| --- | --- |
+| 快捷控制 | 灯光、自动感光、入座检测、视频模式、亮度跟随、熄屏同步、自动色温、双屏亮度、防止休眠 |
+| 灯光调节 | 亮度与 2700–6500K 色温，支持物理操作后的状态回读 |
+| 亮度联动 | 保留当前亮度差，实现 MacBook ↔ Studio Display → iScreenBar 联动 |
+| 环境光标定 | 使用 Studio Display 传感器，分别保存明亮关灯、昏暗开灯阈值 |
+| 自动色温 | 按时间变化，白天偏冷、夜间偏暖；不是测量环境色温 |
+| 内屏管理 | 内屏开关、0°/90°/270° 旋转、5 秒确认回退、外屏断开恢复 |
+| Studio Display 按钮 | 黑色遮罩，保持窗口布局；**不关闭背光，不等同于硬件节电** |
+| 预设 | 保存灯光模式、按前台应用切换模式；独立保存旋转预设 |
 
-## Features
+图标黄色表示灯亮，灰色表示灯灭，红色提示异常；悬停显示亮度和色温。App 不占 Dock 位置。
 
-See the complete Chinese feature inventory: [docs/FEATURES.zh-CN.md](docs/FEATURES.zh-CN.md).
+## 安装
 
-- Studio Display sleeps -> iScreenBar turns off.
-- Studio Display wakes -> iScreenBar turns on.
-- Menu-bar control panel for lamp power, brightness, color temperature,
-  presence detection (including delay setting), and video mode.
-- Built-in presets for focused work, night work, and video meetings.
-- Native MacBook built-in display rotation and physical on/off controls in the same menu panel.
-- Separate lighting presets and rotation presets with matching iScreenBar UI styling.
-- Rotation presets can remember the built-in display power state, angle, and primary-display role.
-- Optional automatic rotation preset on Studio Display connection, with restoration of the prior state when disabled or disconnected.
-- Shows and controls the lamp's automatic ambient-light state.
-- Optional Studio Display brightness following that preserves the current
-  brightness difference between the display and lamp.
-- Optional bidirectional brightness lock between the MacBook built-in display
-  and Studio Display that preserves their current brightness difference.
-- Menu-bar brightness icon shows the active brightness-following state.
-- The icon turns red if the USB connection or a power command fails.
-- Detects USB removal and automatically restores synchronization after the lamp reconnects.
-- Hover text shows the current display/synchronization state.
-- Starts automatically after login using a per-user LaunchAgent.
-- No network access, analytics, cloud service, or account requirement.
-- Recoverable uninstaller moves installed files to Trash.
+已测试：Apple Silicon MacBook Pro、macOS 26、Studio Display、BenQ iScreenBar（USB VID 0x04A5 / PID 0x2501）。其他系统和设备尚未全面验证。
 
-## Screenshots
-
-### Menu-bar health indicator
-
-<img src="docs/images/menu-bar-green-dot.png" width="80" alt="Green iScreenBar synchronization status dot in the macOS menu bar">
-
-The dot is green while synchronization is healthy and changes to red after a
-USB control failure.
-
-### Observed sleep/wake synchronization
-
-![Terminal showing Studio Display sleep and wake events with matching lamp power changes](docs/images/sync-log.png)
-
-## Tested setup
-
-- Apple-silicon Mac running macOS 26
-- Apple Studio Display
-- BenQ iScreenBar USB HID device
-  - Vendor ID: `0x04A5`
-  - Product ID: `0x2501`
-
-Other macOS versions and hardware combinations may work but have not been
-physically verified. The current display selector chooses the largest external
-display reported by Core Graphics.
-
-## Requirements
-
-- macOS with Xcode Command Line Tools (`xcode-select --install`)
-- BenQ iScreenBar connected to the Mac over USB
-- Apple Studio Display connected and visible to macOS
-- The original BenQ app may remain installed and running
-
-## Install
+先安装 Xcode Command Line Tools，然后运行：
 
 ```bash
+xcode-select --install
 git clone https://github.com/rogerbush007-a11y/iScreenBar-StudioDisplay-Sync.git
 cd iScreenBar-StudioDisplay-Sync
 ./scripts/install.sh
 ```
 
-The installer:
+脚本本机编译、临时签名，安装到 `~/Applications/iScreen Menu.app`，创建用户级 LaunchAgent，登录后自动运行。安装无需管理员密码；防止休眠的强制层另需管理员授权。
 
-1. builds a native app locally;
-2. installs it to `~/Applications`;
-3. creates a per-user LaunchAgent;
-4. starts the synchronization service.
+日常灯控直接通过 USB HID 执行，不依赖官方 App。建议避免两个软件同时自动写入灯光设置。相机自动视频模式和灯体硬件记忆尚未完全对齐，不宣称完整替代官方所有功能。
 
-No administrator password is required by the installer.
+## 使用规则
 
-## Verify
+- 亮度跟随与灯体自动感光互斥，关闭跟随后保留当前亮度。
+- 环境光采用近 10 秒中位数。明亮关灯约 30 秒，达到昏暗开灯点约 30 秒；环境关灯后的渐进回开约 45 秒。带回差与持续时间判断，不是越过数值就立即切换。
+- 旋转预设开启：连接 Studio Display 时应用保存角度。关闭：回到 0°，重新连接也请求保持 0°。
+- 外屏断开请求强制恢复内屏。一般显示配置操作避开锁屏/唤醒切换，断开恢复是例外。
+- 防止休眠使用 caffeinate 和管理员授权的 pmset disablesleep，关闭或退出后尝试释放。请实际验证本机合盖、锁屏与恢复行为。
 
-Look for the small green dot in the macOS menu bar, then let Studio Display
-sleep naturally. The lamp should turn off and return when the display wakes.
-
-Runtime log:
+## 验证与限制
 
 ```bash
+./scripts/check.sh
 tail -f ~/Library/Logs/iScreenBarStudioSync.log
-```
-
-Service state:
-
-```bash
 launchctl print gui/$(id -u)/local.qiu.iScreenBarStudioSync
 ```
 
-## Uninstall
+2026-10-05 的“关闭内屏后拔掉外屏恢复”已由使用者实际确认；2026-10-06 的旋转预设关闭回 0°已构建部署，仍待新一轮插拔验收。构建通过、系统状态回读不代表面板确实发光。
+
+显示控制依赖 macOS 私有 SkyLight / MonitorPanel / DisplayServices 接口，系统升级后需要复测。USB 报文针对特定灯型，其他 ScreenBar 型号不保证兼容。虚拟分屏实验不属于当前正式功能。
+
+## 卸载与开发
 
 ```bash
 ./scripts/uninstall.sh
-```
-
-The service is stopped and its app and LaunchAgent are moved to Trash. The log
-is preserved for troubleshooting and can be deleted manually.
-
-## Build only
-
-```bash
+# 仅构建，不安装：
 ./scripts/build.sh
 ```
 
-The app is written to `build/iScreenBar Studio Display Sync.app` and ad-hoc
-signed locally.
+卸载将 App 和 LaunchAgent 移至废纸篓，保留日志。构建产物位于 `build/iScreen Menu.app`。目前为本机临时签名，无 Developer ID 公证或自动更新。
 
-## Behavior and limitations
-
-- The utility intentionally synchronizes power state: wake always sends the
-  lamp-on command after the utility turned it off for display sleep.
-- Sleep/wake power synchronization is always enabled.
-- Click the menu-bar brightness icon to open the control panel.
-- Automatic ambient light can be switched on or off from the control panel.
-  Enabling uses the official auto-light report; disabling restores the current
-  manual brightness because the lamp firmware handles the two transitions
-  differently.
-- On the tested iScreenBar firmware, the lamp's physical auto-light key enters
-  or recalibrates automatic mode but does not reliably exit it. Use the control
-  panel to turn automatic ambient light off.
-- Automatic ambient-light adjustment and Studio Display brightness following
-  are mutually exclusive, so only one source controls lamp brightness at a time.
-- Optional time-based color temperature moves smoothly from warm light at night
-  to cooler light during the day in 50 K steps, with at most one lamp update per
-  minute; disabling it keeps the current manual value.
-- Presence detection follows the official 3/5/10-minute choices and includes
-  low/medium/high sensitivity in the control panel,
-  which is sent to the lamp when supported.
-- Enabling Studio Display brightness following locks the current brightness difference; disabling it leaves the lamp at its current brightness.
-- Selecting a preset turns the lamp on, applies its brightness and color
-  temperature, sets video mode, and disables Studio Display brightness following.
-- BenQ's own automatic brightness mode uses the lamp's ambient-light sensor and is separate from this feature.
-- If the green dot disappears, the LaunchAgent is not running.
-- A USB failure changes the dot to red and writes the error to the local log.
-- The implementation uses device-specific 33-byte HID reports for power,
-  brightness, and status communication.
-
-## Privacy and security
-
-The source contains no networking API. All display observation and USB control
-happen locally. See [SECURITY.md](SECURITY.md) and [NOTICE.md](NOTICE.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+源码无网络请求、分析或云端依赖。参见 [安全说明](SECURITY.md)、[商标声明](NOTICE.md)、[MIT 许可证](LICENSE)。
