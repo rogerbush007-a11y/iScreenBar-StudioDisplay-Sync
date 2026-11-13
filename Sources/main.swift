@@ -2029,6 +2029,9 @@ private final class StatusIndicator: NSObject {
         popover.contentViewController = controller
         popover.contentSize = NSSize(width: UIStyle.panelWidth, height: 626)
         popover.behavior = .transient
+        _ = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            if self?.popover.isShown == true { self?.popover.performClose(nil) }
+        }
     }
 
     private func sliderRow(symbol: String, title: String, slider: NSSlider, valueLabel: NSTextField) -> NSStackView {
