@@ -10,6 +10,7 @@ private let benqVendorID = 0x04A5
 private let iScreenBarProductID = 0x2501
 private let appleDisplayVendorID: UInt32 = 0x0610
 private let studioDisplayProductID: UInt32 = 0xAE46
+private let menuTextColor = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black }
 private let pollInterval: TimeInterval = 0.25
 
 private func log(_ message: String) {
@@ -173,7 +174,7 @@ private final class FeatureButton: NSButton {
 
     private func updateAppearance() {
         guard let layer else { return }
-        let foregroundColor: NSColor = state == .on ? .white : .black
+        let foregroundColor: NSColor = state == .on ? .white : menuTextColor
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: UIStyle.controlFont,
             .foregroundColor: foregroundColor
@@ -190,7 +191,7 @@ private final class FeatureButton: NSButton {
             layer.borderColor = NSColor.black.withAlphaComponent(0.09).cgColor
             layer.shadowColor = NSColor.clear.cgColor
             layer.shadowOpacity = 0
-            contentTintColor = .black
+            contentTintColor = menuTextColor
         }
         layer.borderWidth = 0.5
     }
@@ -828,7 +829,7 @@ private final class StatusIndicator: NSObject {
         valueLabel.textColor = .systemGreen
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak button, weak valueLabel] in
             button?.state = .off
-            valueLabel?.textColor = .secondaryLabelColor
+            valueLabel?.textColor = menuTextColor
         }
     }
 
@@ -1205,7 +1206,7 @@ private final class StatusIndicator: NSObject {
         title.font = .systemFont(ofSize: 20, weight: .semibold)
         let subtitle = NSTextField(labelWithString: "快速切换预设灯光场景")
         subtitle.font = UIStyle.bodyFont
-        subtitle.textColor = .secondaryLabelColor
+        subtitle.textColor = menuTextColor
         let rows = NSStackView()
         rows.orientation = .vertical
         rows.alignment = .width
@@ -1223,7 +1224,7 @@ private final class StatusIndicator: NSObject {
             label.font = UIStyle.bodyFont
             label.translatesAutoresizingMaskIntoConstraints = false
             let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil) ?? NSImage())
-            chevron.contentTintColor = .tertiaryLabelColor
+            chevron.contentTintColor = menuTextColor
             chevron.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
             chevron.translatesAutoresizingMaskIntoConstraints = false
             let row = NSView()
@@ -1852,11 +1853,11 @@ private final class StatusIndicator: NSObject {
         ambientEnableSwitch.action = #selector(ambientEnableChanged)
         for label in [brightThresholdLabel, darkThresholdLabel] {
             label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-            label.textColor = .secondaryLabelColor
+            label.textColor = menuTextColor
             label.alignment = .right
         }
         ambientStatusLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
-        ambientStatusLabel.textColor = .secondaryLabelColor
+        ambientStatusLabel.textColor = menuTextColor
         displayPowerSwitch.target = self
         displayPowerSwitch.action = #selector(displayPowerChanged)
         studioPowerSwitch.target = self
@@ -1880,15 +1881,15 @@ private final class StatusIndicator: NSObject {
         [brightnessSlider, temperatureSlider].forEach { $0.controlSize = .small }
         [presenceDelayPopup, presenceSensitivityPopup].forEach { $0.controlSize = .small }
         brightnessValueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        brightnessValueLabel.textColor = .secondaryLabelColor
+        brightnessValueLabel.textColor = menuTextColor
         temperatureValueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        temperatureValueLabel.textColor = .secondaryLabelColor
+        temperatureValueLabel.textColor = menuTextColor
 
         let title = NSTextField(labelWithString: "iScreen Menu")
         title.font = .systemFont(ofSize: 15, weight: .semibold)
         let subtitle = NSTextField(labelWithString: "Screen and Light Controller")
         subtitle.font = .systemFont(ofSize: 11)
-        subtitle.textColor = .secondaryLabelColor
+        subtitle.textColor = menuTextColor
         let header = NSStackView(views: [title, subtitle])
         header.orientation = .vertical
         header.alignment = .leading
@@ -1949,7 +1950,7 @@ private final class StatusIndicator: NSObject {
         let ambientTitle = sectionLabel("环境光标定")
         let ambientEnableLabel = NSTextField(labelWithString: "启用")
         ambientEnableLabel.font = UIStyle.bodyFont
-        ambientEnableLabel.textColor = .secondaryLabelColor
+        ambientEnableLabel.textColor = menuTextColor
         let ambientHeader = NSStackView(views: [ambientTitle, flexibleSpace(), ambientEnableLabel, ambientEnableSwitch])
         ambientHeader.orientation = .horizontal
         ambientHeader.alignment = .centerY
@@ -1997,7 +1998,7 @@ private final class StatusIndicator: NSObject {
 
         let autoPresetLabel = NSTextField(labelWithString: "启用预设")
         autoPresetLabel.font = UIStyle.bodyFont
-        autoPresetLabel.textColor = .secondaryLabelColor
+        autoPresetLabel.textColor = menuTextColor
         let rotationPresetHeader = NSStackView(views: [rotationPresetTitle, flexibleSpace(), autoPresetLabel, displayAutoPresetSwitch])
         rotationPresetHeader.orientation = .horizontal
         rotationPresetHeader.alignment = .centerY
@@ -2068,7 +2069,7 @@ private final class StatusIndicator: NSObject {
     private func symbolView(_ name: String) -> NSImageView {
         let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
         let view = NSImageView(image: image ?? NSImage())
-        view.contentTintColor = .secondaryLabelColor
+        view.contentTintColor = menuTextColor
         view.symbolConfiguration = .init(pointSize: UIStyle.iconSize, weight: .regular)
         view.widthAnchor.constraint(equalToConstant: 18).isActive = true
         view.heightAnchor.constraint(equalToConstant: 18).isActive = true
@@ -2084,7 +2085,7 @@ private final class StatusIndicator: NSObject {
     private func sectionLabel(_ title: String) -> NSTextField {
         let label = NSTextField(labelWithString: title)
         label.font = UIStyle.captionFont
-        label.textColor = .secondaryLabelColor
+        label.textColor = menuTextColor
         return label
     }
 
@@ -2539,13 +2540,13 @@ private final class StudioDisplayAmbientSensor {
 
     private static func makeManager() -> IOHIDManager {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        let matching: [String: Any] = [
+        let matching: [[String: Any]] = [0x1118, 0x1114].map { [
             kIOHIDVendorIDKey as String: 0x05AC,
-            kIOHIDProductIDKey as String: 0x1118,
+            kIOHIDProductIDKey as String: $0,
             kIOHIDPrimaryUsagePageKey as String: 0x20,
             kIOHIDPrimaryUsageKey as String: 0x41
-        ]
-        IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
+        ] }
+        IOHIDManagerSetDeviceMatchingMultiple(manager, matching as CFArray)
         return manager
     }
 
@@ -2597,7 +2598,7 @@ private func studioDisplayID() -> CGDirectDisplayID? {
         CGDisplayIsBuiltin($0) == 0 &&
             CGDisplayIsOnline($0) != 0 &&
             CGDisplayVendorNumber($0) == appleDisplayVendorID &&
-            CGDisplayModelNumber($0) == studioDisplayProductID
+            [studioDisplayProductID, 0xAE3A].contains(CGDisplayModelNumber($0))
     }
 }
 
